@@ -296,7 +296,7 @@ tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim) {
     free(shape);
     if (r == NULL) return NULL;
 
-    // see notes/sum.md for how this section works
+    // see notes/sum.ipynb for how this section works
     uint32_t mprev = 1, mnext = 1;
     for (uint8_t i = 0; i < d; i++) mprev *= t->shape[i];
     for (uint8_t i = d+1; i < t->ndim; i++) mnext *= t->shape[i];
