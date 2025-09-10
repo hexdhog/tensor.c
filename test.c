@@ -6,14 +6,14 @@ void test_sum() {
     assert(t != NULL);
     for (uint16_t i = 0; i < t->nelem; i++) t->data[i] = i + 1;
 
-    tensor_t *r = sum(t, 2, true);
+    tensor_t *r = sum(t, 0, true);
     assert(r != NULL);
 
     printf("t:\n");
-    print(t);
+    print(stdout, t);
 
     printf("r:\n");
-    print(r);
+    print(stdout, r);
 
     tensor_free(t);
     tensor_free(r);
@@ -29,18 +29,18 @@ void test_add() {
     for (uint16_t i = 0; i < t2->nelem; i++) t2->data[i] = i;
 
     printf("t1\n");
-    print(t1);
+    print(stdout, t1);
     printf("\n");
 
     printf("t2\n");
-    print(t2);
+    print(stdout, t2);
     printf("\n");
 
     tensor_t *t3 = add(t1, t2);
     assert(t3 != NULL);
 
     printf("t3\n");
-    print(t3);
+    print(stdout, t3);
     printf("\n");
 
     tensor_free(t1);

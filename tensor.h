@@ -24,20 +24,19 @@ typedef enum
 
 tensor_t *tensor_alloc(uint8_t ndim, uint16_t *shape);
 void tensor_free(tensor_t *t);
-tensor_t *fill(uint8_t ndim, uint16_t *shape, float value);
 uint8_t broadcast(tensor_t *a, uint16_t **ashape, tensor_t *b, uint16_t **bshape);
 tensor_t *reshape(tensor_t *t, uint8_t ndim, uint16_t *shape);
-tensor_t *squeeze(tensor_t *t, uint8_t dim);
-tensor_t *unsqueeze(tensor_t *t, uint8_t dim);
+tensor_t *squeeze(tensor_t *t, int16_t dim);
+tensor_t *unsqueeze(tensor_t *t, int16_t dim);
 tensor_t *transpose(tensor_t *t, uint8_t dim1, uint8_t dim2);
 tensor_t *sumall(tensor_t *t);
 tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim);
 tensor_t *add(tensor_t *a, tensor_t *b);
 tensor_t *mul(tensor_t *a, tensor_t *b);
-tensor_t *dot(tensor_t *a, tensor_t *b);
-bool max(tensor_t *t, float *m);
-bool min(tensor_t *t, float *m);
+// tensor_t *dot(tensor_t *a, tensor_t *b);
+tensor_t *min(tensor_t *t);
+tensor_t *max(tensor_t *t);
 void shape_print(FILE *stream, uint8_t ndim, uint16_t *shape);
-void print(tensor_t *t);
+void print(FILE *stream, tensor_t *t);
 
 #endif

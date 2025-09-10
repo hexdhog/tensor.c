@@ -2,7 +2,17 @@
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define RESOLVE_DIM(dim, ndim) ((dim) >= 0 ? (dim) : (dim) + (ndim))
 
+// TODO: should error checking be replaced with asserts to simplify code?
+
+/**
+ * Creates a tensor and allocates the required memory for it
+ * 
+ * @param ndim number of dimensions for the tensor (number of elements in the shape argument)
+ * @param shape shape of the tensor
+ * @return pointer to the created tensor or NULL in case of error
+ */
 tensor_t *tensor_alloc(uint8_t ndim, uint16_t *shape) {
     if (shape == NULL) return NULL;
 
@@ -30,37 +40,39 @@ tensor_t *tensor_alloc(uint8_t ndim, uint16_t *shape) {
     return t;
 }
 
+/**
+ * Frees all of the memory allocated to the tensor and sets its internal pointers to NULL.
+ * The memory for the tensor_t struct is freed but it is not responsible for setting any variables pointing to it to NULL.
+ * 
+ * @param t tensor to free
+ */
 void tensor_free(tensor_t *t) {
     if (t == NULL) return;
-    if (t->shape != NULL) free(t->shape);
-    if (t->data != NULL) free(t->data);
+    if (t->shape != NULL) {
+        free(t->shape);
+        t->shape = NULL;
+    }
+    if (t->data != NULL) {
+        free(t->data);
+        t->data = NULL;
+    }
     free(t);
 }
 
-tensor_t *fill(uint8_t ndim, uint16_t *shape, float value) {
-    tensor_t *t = tensor_alloc(ndim, shape);
-    if (t != NULL && t->data != NULL) memset(t->data, value, t->nelem * sizeof(*t->data));
-    return t;
-}
-
-bool max(tensor_t *t, float *m) {
-    if (m == NULL || t == NULL || t->shape == NULL || t->data == NULL || t->nelem < 1) return false;
-    *m = t->data[0];
-    for (uint32_t i = 1; i < t->nelem; i++) if (t->data[i] > *m) *m = t->data[i];
-    return true;
-}
-
-bool min(tensor_t *t, float *m) {
-    if (m == NULL || t == NULL || t->shape == NULL || t->data == NULL || t->nelem < 1) return false;
-    *m = t->data[0];
-    for (uint32_t i = 1; i < t->nelem; i++) if (t->data[i] < *m) *m = t->data[i];
-    return true;
-}
-
+/**
+ * Broadcasts tensor a with tensor b and stores the new shapes into ashape and bshape respectively,
+ * following NumPy's broadcast rules: https://numpy.org/doc/stable/user/basics.broadcasting.html#general-broadcasting-rules
+ * 
+ * @param a tensor one to broadcast
+ * @param ashape new shape for tensor one (pass NULL if not interested in new shape for tensor one)
+ * @param b tensor two to broadcast
+ * @param bshape new shape for tensor two (pass NULL if not interested in new shape for tensor two)
+ * @return number of dimensions of the broadcasted shapes or 0 in case of error
+ */
 uint8_t broadcast(tensor_t *a, uint16_t **ashape, tensor_t *b, uint16_t **bshape) {
     if (a == NULL || a->shape == NULL || b == NULL || b->shape == NULL) return 0;
 
-    uint8_t ndim = a->ndim > b->ndim ? a->ndim : b->ndim;
+    uint8_t ndim = MAX(a->ndim, b->ndim);
     uint8_t offa = ndim - a->ndim, offb = ndim - b->ndim;
 
     uint16_t *_ashape = (uint16_t *) malloc(ndim * sizeof(*a->shape));
@@ -91,24 +103,40 @@ uint8_t broadcast(tensor_t *a, uint16_t **ashape, tensor_t *b, uint16_t **bshape
     return ndim;
 }
 
-tensor_t *squeeze(tensor_t *t, uint8_t dim) {
+/**
+ * Removes the specified dimension of size 1
+ * 
+ * @param t tensor to remove the dimension of size 1
+ * @param dim dimension of size 1 to remove
+ * @return squeezed tensor or NULL on error
+ */
+tensor_t *squeeze(tensor_t *t, int16_t dim) {
     if (t == NULL || t->shape == NULL) return NULL;
-    if (t->shape[dim] != 1) return NULL;
     if (dim >= t->ndim || t->ndim < 2) return t;
-    for (uint8_t i = dim; i < t->ndim-1; i++) t->shape[i] = t->shape[i+1];
+    uint8_t d = RESOLVE_DIM(dim, t->ndim);
+    if (t->shape[d] != 1) return t;
+    for (uint8_t i = d; i < t->ndim-1; i++) t->shape[i] = t->shape[i+1];
     t->ndim--;
     return t;
 }
 
-tensor_t *unsqueeze(tensor_t *t, uint8_t dim) {
+/**
+ * Adds a dimension of size 1 at the specified dimension
+ * 
+ * @param t tensor to add the dimension of size 1
+ * @param dim dimension of size 1 to add
+ * @return unsqueezed tensor or NULL on error
+ */
+tensor_t *unsqueeze(tensor_t *t, int16_t dim) {
     if (t == NULL || t->shape == NULL) return NULL;
-    if (dim > t->ndim) return t;
+    uint8_t d = RESOLVE_DIM(dim, t->ndim);
+    if (d > t->ndim) return t;
     uint8_t ndim = t->ndim + 1;
     uint16_t *shape = (uint16_t *) malloc(ndim * sizeof(*shape));
     if (shape == NULL) return NULL;
-    for (uint8_t i = 0; i < dim; i++) shape[i] = t->shape[i];
-    shape[dim] = 1;
-    for (uint8_t i = dim; i < t->ndim; i++) shape[i+1] = t->shape[i];
+    for (uint8_t i = 0; i < d; i++) shape[i] = t->shape[i];
+    shape[d] = 1;
+    for (uint8_t i = d; i < t->ndim; i++) shape[i+1] = t->shape[i];
     t->ndim = ndim;
     free(t->shape);
     t->shape = shape;
@@ -120,6 +148,14 @@ tensor_t *transpose(tensor_t *t, uint8_t dim1, uint8_t dim2) {
     return t;
 }
 
+/**
+ * Change the shape of a tensor
+ * 
+ * @param t tensor to change the shape of
+ * @param ndim number of dimensions of the new shape
+ * @param shape new shape
+ * @return pointer to the reshaped tensor, or NULL on error
+ */
 tensor_t *reshape(tensor_t *t, uint8_t ndim, uint16_t *shape) {
     if (t == NULL) return NULL;
     uint8_t nelem = 0;
@@ -130,6 +166,47 @@ tensor_t *reshape(tensor_t *t, uint8_t ndim, uint16_t *shape) {
     return t;
 }
 
+// TODO: add argmin/argmax and amin/amax
+// TODO: min/max functions can be simplified with ops (they are the exact same except for one symbol; like ewop)
+
+/**
+ * Returns the minimum value in a tensor
+ * 
+ * @param t tensor to search minimum value on
+ * @return new tensor with the minimum value of t as its single element, NULL on error
+ */
+tensor_t *min(tensor_t *t) {
+    if (t == NULL || t->shape == NULL || t->data == NULL || t->nelem < 1) return NULL;
+    tensor_t *r = tensor_alloc(1, (uint16_t[]){1});
+    if (r == NULL) return NULL;
+    float m = t->data[0];
+    for (uint32_t i = 1; i < t->nelem; i++) if (t->data[i] < m) m = t->data[i];
+    *r->data = m;
+    return t;
+}
+
+/**
+ * Returns the maximum value in a tensor
+ * 
+ * @param t tensor to search maximum value on
+ * @return new tensor with the maximum value of t as its single element, NULL on error
+ */
+tensor_t *max(tensor_t *t) {
+    if (t == NULL || t->shape == NULL || t->data == NULL || t->nelem < 1) return NULL;
+    tensor_t *r = tensor_alloc(1, (uint16_t[]){1});
+    if (r == NULL) return NULL;
+    float m = t->data[0];
+    for (uint32_t i = 1; i < t->nelem; i++) if (t->data[i] > m) m = t->data[i];
+    *r->data = m;
+    return r;
+}
+
+/**
+ * Returns the sum of all the elements of a tensor
+ * 
+ * @param t tensor to sum
+ * @return sum of all the elements in `t`
+ */
 tensor_t *sumall(tensor_t *t) {
     if (t == NULL || t->shape == NULL || t->data == NULL) return NULL;
     tensor_t *r = tensor_alloc(1, (uint16_t[]){1});
@@ -140,127 +217,415 @@ tensor_t *sumall(tensor_t *t) {
     return r;
 }
 
-    /*
-    t.shape = (2, 3, 2, 4)
-    t.data = 
-         [[[[ 1,  2,  3,  4],
-            [ 5,  6,  7,  8]],
+/*
+looking into the output of sum along different dimensions in pytorch to derive an algorithm
 
-            [[ 9, 10, 11, 12],
-            [13, 14, 15, 16]],
+```python
+>>> shape = (2,
+3,
+2,
+4)
+>>> shape
+(2,
+3,
+2,
+4)
+```
 
-            [[17, 18, 19, 20],
-            [21, 22, 23, 24]]],
+t.data = 
+     [
+  [
+    [
+      [
+        1,
+        2,
+        3,
+        4
+      ],
+      [
+        5,
+        6,
+        7,
+        8
+      ]
+    ],
+    [
+      [
+        9,
+        10,
+        11,
+        12
+      ],
+      [
+        13,
+        14,
+        15,
+        16
+      ]
+    ],
+    [
+      [
+        17,
+        18,
+        19,
+        20
+      ],
+      [
+        21,
+        22,
+        23,
+        24
+      ]
+    ]
+  ],
+  [
+    [
+      [
+        25,
+        26,
+        27,
+        28
+      ],
+      [
+        29,
+        30,
+        31,
+        32
+      ]
+    ],
+    [
+      [
+        33,
+        34,
+        35,
+        36
+      ],
+      [
+        37,
+        38,
+        39,
+        40
+      ]
+    ],
+    [
+      [
+        41,
+        42,
+        43,
+        44
+      ],
+      [
+        45,
+        46,
+        47,
+        48
+      ]
+    ]
+  ]
+]
 
 
-            [[[25, 26, 27, 28],
-            [29, 30, 31, 32]],
 
-            [[33, 34, 35, 36],
-            [37, 38, 39, 40]],
+t.sum(0, keepdim=True)
+     [
+  [
+    [
+      [
+        26,
+        28,
+        30,
+        32
+      ],
+      [
+        34,
+        36,
+        38,
+        40
+      ]
+    ],
+    [
+      [
+        42,
+        44,
+        46,
+        48
+      ],
+      [
+        50,
+        52,
+        54,
+        56
+      ]
+    ],
+    [
+      [
+        58,
+        60,
+        62,
+        64
+      ],
+      [
+        66,
+        68,
+        70,
+        72
+      ]
+    ]
+  ]
+]
 
-            [[41, 42, 43, 44],
-            [45, 46, 47, 48]]]]
+    dim = 0
+    mprev = 1
+    mnext = 24
+    stride = 3 * 2 * 4 = 24 (shape[
+  1
+] * shape[
+  2
+] * shape[
+  3
+])
+    nstride = 2 (shape[
+  0
+])
+    step = 1
+    nstep = 3 * 2 * 4 = 24 (shape[
+  1
+] * shape[
+  2
+] * shape[
+  3
+])
+    shift = 0
+    nshift = 1
+
+t.sum(1, keepdim=True)
+     [
+  [
+    [
+      [
+        27,
+        30,
+        33,
+        36
+      ],
+      [
+        39,
+        42,
+        45,
+        48
+      ]
+    ]
+  ],
+  [
+    [
+      [
+        99,
+        102,
+        105,
+        108
+      ],
+      [
+        111,
+        114,
+        117,
+        120
+      ]
+    ]
+  ]
+]
+
+    dim = 1
+    mprev = 2
+    mnext = 8
+    stride = 2 * 4 = 8 (shape[
+  2
+] * shape[
+  3
+])
+    nstride = 3 (shape[
+  1
+])
+    step = 1
+    nstep = 2 * 4 = 8 (shape[
+  2
+] * shape[
+  3
+])
+    shift = 3 * 2 * 4 = 24 (shape[
+  1
+] * shape[
+  2
+] * shape[
+  3
+])
+    nshift = 2
+
+t.sum(2, keepdim=True)
+      [
+  [
+    [
+      [
+        6,
+        8,
+        10,
+        12
+      ]
+    ],
+    [
+      [
+        22,
+        24,
+        26,
+        28
+      ]
+    ],
+    [
+      [
+        38,
+        40,
+        42,
+        44
+      ]
+    ]
+  ],
+  [
+    [
+      [
+        54,
+        56,
+        58,
+        60
+      ]
+    ],
+    [
+      [
+        70,
+        72,
+        74,
+        76
+      ]
+    ],
+    [
+      [
+        86,
+        88,
+        90,
+        92
+      ]
+    ]
+  ]
+]
+
+    dim = 2
+    mprev = 6
+    mnext = 4
+    stride = 4 (shape[
+  3
+])
+    nstride = 2 (shape[
+  2
+])
+    step = 1
+    nstep = 8 (shape[
+  2
+] * shape[
+  3
+])
+    shift = 8 (shape[
+  2
+] * shape[
+  3
+])
+    nshift = 6
+
+t.sum(3, keepdim=True)
+     [
+  [
+    [
+      [
+        10
+      ],
+      [
+        26
+      ]
+    ],
+    [
+      [
+        42
+      ],
+      [
+        58
+      ]
+    ],
+    [
+      [
+        74
+      ],
+      [
+        90
+      ]
+    ]
+  ],
+  [
+    [
+      [
+        106
+      ],
+      [
+        122
+      ]
+    ],
+    [
+      [
+        138
+      ],
+      [
+        154
+      ]
+    ],
+    [
+      [
+        170
+      ],
+      [
+        186
+      ]
+    ]
+  ]
+]
+
+    dim = 3
+    mprev = 12
+    mnext = 1
+    stride = 1 (shape[
+  4
+] -> 1)
+    nstride = 4 (shape[
+  3
+])
+    step = 4 (shape[
+  3
+])
+    nstep = mprev = 12
+    shift = 0
+    nshift = 1
 
 
+`dim` is the
+ */
 
-    t.sum(0, keepdim=True)
-         [[[[26, 28, 30, 32],
-            [34, 36, 38, 40]],
-
-            [[42, 44, 46, 48],
-            [50, 52, 54, 56]],
-
-            [[58, 60, 62, 64],
-            [66, 68, 70, 72]]]]
-
-        dim = 0
-        mprev = 1
-        mnext = 24
-        stride = 3 * 2 * 4 = 24 (shape[1] * shape[2] * shape[3])
-        nstride = 2 (shape[0])
-        step = 1
-        nstep = 3 * 2 * 4 = 24 (shape[1] * shape[2] * shape[3])
-        shift = 0
-        nshift = 1
-
-    t.sum(1, keepdim=True)
-         [[[[ 27,  30,  33,  36],
-            [ 39,  42,  45,  48]]],
-
-
-            [[[ 99, 102, 105, 108],
-            [111, 114, 117, 120]]]]
-
-        dim = 1
-        mprev = 2
-        mnext = 8
-        stride = 2 * 4 = 8 (shape[2] * shape[3])
-        nstride = 3 (shape[1])
-        step = 1
-        nstep = 2 * 4 = 8 (shape[2] * shape[3])
-        shift = 3 * 2 * 4 = 24 (shape[1] * shape[2] * shape[3])
-        nshift = 2
-
-    t.sum(2, keepdim=True)
-          [[[[ 6,  8, 10, 12]],
-
-            [[22, 24, 26, 28]],
-
-            [[38, 40, 42, 44]]],
-
-
-            [[[54, 56, 58, 60]],
-
-            [[70, 72, 74, 76]],
-
-            [[86, 88, 90, 92]]]]
-
-        dim = 2
-        mprev = 6
-        mnext = 4
-        stride = 4 (shape[3])
-        nstride = 2 (shape[2])
-        step = 1
-        nstep = 8 (shape[2] * shape[3])
-        shift = 8 (shape[2] * shape[3])
-        nshift = 6
-
-    t.sum(3, keepdim=True)
-         [[[[ 10],
-            [ 26]],
-
-            [[ 42],
-            [ 58]],
-
-            [[ 74],
-            [ 90]]],
-
-
-            [[[106],
-            [122]],
-
-            [[138],
-            [154]],
-
-            [[170],
-            [186]]]]
-
-        dim = 3
-        mprev = 12
-        mnext = 1
-        stride = 1 (shape[4] -> 1)
-        nstride = 4 (shape[3])
-        step = 4 (shape[3])
-        nstep = mprev = 12
-        shift = 0
-        nshift = 1
-    */
-
+/**
+ * Returns the sum of all the elements along the specified dimension of a tensor
+ * 
+ * @param t tensor to sum
+ * @param dim dimension to sum along
+ * @param keepdim  true to keep the summed dimension with a 1, false to squeeze the summed dimension
+ * @return tensor with the summed elements along the specified dimension
+ */
 tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim) {
     if (t == NULL || t->shape == NULL || t->data == NULL) return NULL;
     if (dim < -t->ndim || t->ndim <= dim) return NULL;
-    uint8_t d = dim >= 0 ? dim : dim + t->ndim;
+    uint8_t d = RESOLVE_DIM(dim, t->ndim);
 
     uint16_t *shape = (uint16_t *) malloc(t->ndim * sizeof(*shape));
     if (shape == NULL) return NULL;
@@ -270,6 +635,7 @@ tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim) {
     free(shape);
     if (r == NULL) return NULL;
 
+    // see notes/sum.md for how this section works
     uint32_t mprev = 1, mnext = 1;
     for (uint8_t i = 0; i < d; i++) mprev *= t->shape[i];
     for (uint8_t i = d+1; i < t->ndim; i++) mnext *= t->shape[i];
@@ -341,7 +707,6 @@ static tensor_t *ewop(tensor_t *a, tensor_t *b, tensor_op_t op) {
     }
 
     for (uint32_t cidx = 0; cidx < c->nelem; cidx++) {
-        // TODO: optimize this, do not use modulus operator
         float aval = a->data[cidx % a->nelem];
         float bval = b->data[cidx % b->nelem];
         switch (op) {
@@ -374,118 +739,118 @@ tensor_t *mul(tensor_t *a, tensor_t *b) {
     return ewop(a, b, OP_MUL);
 }
 
-tensor_t *dot(tensor_t *a, tensor_t *b) {
-    if (a == NULL || b == NULL || (a->ndim < 2 && b->ndim < 2)) return NULL;
+// tensor_t *dot(tensor_t *a, tensor_t *b) {
+//     if (a == NULL || b == NULL || (a->ndim < 2 && b->ndim < 2)) return NULL;
 
-    printf("a.shape: ");
-    shape_print(stdout, a->ndim, a->shape);
-    printf("\n");
+//     printf("a.shape: ");
+//     shape_print(stdout, a->ndim, a->shape);
+//     printf("\n");
 
-    unsqueeze(b, b->ndim-2);
-    printf("b.shape: ");
-    shape_print(stdout, b->ndim, b->shape);
-    printf("\n");
+//     unsqueeze(b, b->ndim-2);
+//     printf("b.shape: ");
+//     shape_print(stdout, b->ndim, b->shape);
+//     printf("\n");
 
-    uint16_t *ashape, *bshape;
-    b->ndim--; // last dim of a must match second to last dim of b
-    uint8_t ndim = broadcast(a, &ashape, b, &bshape);
-    b->ndim++;
-    printf("ndim: %d\n", ndim);
-    if (ndim == 0) return NULL;
+//     uint16_t *ashape, *bshape;
+//     b->ndim--; // last dim of a must match second to last dim of b
+//     uint8_t ndim = broadcast(a, &ashape, b, &bshape);
+//     b->ndim++;
+//     printf("ndim: %d\n", ndim);
+//     if (ndim == 0) return NULL;
 
-    printf("ashape: ");
-    shape_print(stdout, ndim, ashape);
-    printf("\n");
-    printf("bshape: ");
-    shape_print(stdout, ndim, bshape);
-    printf("\n");
+//     printf("ashape: ");
+//     shape_print(stdout, ndim, ashape);
+//     printf("\n");
+//     printf("bshape: ");
+//     shape_print(stdout, ndim, bshape);
+//     printf("\n");
 
-    uint16_t *cshape = (uint16_t *) malloc(ndim * sizeof(*cshape));
-    if (cshape == NULL) return NULL;
-    uint32_t nelem = 0;
-    for (uint8_t i = 0; i < ndim; i++) {
-        cshape[i] = MAX(ashape[i], bshape[i]);
-        nelem = (nelem > 0 ? nelem : 1) * cshape[i];
-    }
-    cshape[ndim-1] = b->shape[b->ndim-1];
-    tensor_t *c = tensor_alloc(ndim, cshape);
-    if (c == NULL) {
-        free(ashape);
-        free(bshape);
-        free(cshape);
-        return NULL;
-    }
-    printf("cshape: ");
-    shape_print(stdout, ndim, cshape);
-    printf("\n");
+//     uint16_t *cshape = (uint16_t *) malloc(ndim * sizeof(*cshape));
+//     if (cshape == NULL) return NULL;
+//     uint32_t nelem = 0;
+//     for (uint8_t i = 0; i < ndim; i++) {
+//         cshape[i] = MAX(ashape[i], bshape[i]);
+//         nelem = (nelem > 0 ? nelem : 1) * cshape[i];
+//     }
+//     cshape[ndim-1] = b->shape[b->ndim-1];
+//     tensor_t *c = tensor_alloc(ndim, cshape);
+//     if (c == NULL) {
+//         free(ashape);
+//         free(bshape);
+//         free(cshape);
+//         return NULL;
+//     }
+//     printf("cshape: ");
+//     shape_print(stdout, ndim, cshape);
+//     printf("\n");
 
-    printf("a:\n");
-    print(a);
-    printf("\n");
+//     printf("a:\n");
+//     print(a);
+//     printf("\n");
 
-    printf("b:\n");
-    print(b);
-    printf("\n");
+//     printf("b:\n");
+//     print(b);
+//     printf("\n");
 
-    uint32_t aoff = 0, boff = 0, coff = 0;
-    uint32_t astep = ashape[a->ndim-1] * ashape[a->ndim-2];
-    uint32_t bstep = bshape[b->ndim-1] * bshape[b->ndim-2];
-    uint32_t cstep = cshape[c->ndim-1] * cshape[c->ndim-2];
-    uint32_t nitr = c->nelem / cstep;
+//     uint32_t aoff = 0, boff = 0, coff = 0;
+//     uint32_t astep = ashape[a->ndim-1] * ashape[a->ndim-2];
+//     uint32_t bstep = bshape[b->ndim-1] * bshape[b->ndim-2];
+//     uint32_t cstep = cshape[c->ndim-1] * cshape[c->ndim-2];
+//     uint32_t nitr = c->nelem / cstep;
 
-    // coff += cstep;
-    nitr = 1;
+//     // coff += cstep;
+//     nitr = 1;
 
-    /**
-     * a.shape = (2, 2, 3)
-     * b.shape = (3, 2)
-     * c.shape = (2, 2, 2)
-     * 
-     * c[0,0,0] = a[0,0] * b[:,0]
-     * 
-     * c[0,0,0] = a[0,0,0]*b[0,0] + a[0,0,1]*b[1,0] + a[0,0,2]*b[2,0]
-     * c[0,0,1] = a[0,0,0]*b[0,1] + a[0,0,1]*b[1,1] + a[0,0,2]*b[2,1]
-     * c[0,1,0] = a[0,1,0]*b[0,0] + a[0,1,1]*b[1,0] + a[0,1,2]*b[2,0]
-     * c[0,1,1] = a[0,1,0]*b[0,1] + a[0,1,1]*b[1,1] + a[0,1,2]*b[2,1]
-     * c[1,0,0] = a[1,0,0]*b[0,0] + a[1,0,1]*b[1,0] + a[1,0,2]*b[2,0]
-     * c[1,0,1] = a[1,0,0]*b[0,1] + a[1,0,1]*b[1,1] + a[1,0,2]*b[2,1]
-     * c[1,1,0] = a[1,1,0]*b[0,0] + a[1,1,1]*b[1,0] + a[1,1,2]*b[2,0]
-     * c[1,1,1] = a[1,1,0]*b[0,1] + a[1,1,1]*b[1,1] + a[1,1,2]*b[2,1]
-    */
+//     /**
+//      * a.shape = (2, 2, 3)
+//      * b.shape = (3, 2)
+//      * c.shape = (2, 2, 2)
+//      * 
+//      * c[0,0,0] = a[0,0] * b[:,0]
+//      * 
+//      * c[0,0,0] = a[0,0,0]*b[0,0] + a[0,0,1]*b[1,0] + a[0,0,2]*b[2,0]
+//      * c[0,0,1] = a[0,0,0]*b[0,1] + a[0,0,1]*b[1,1] + a[0,0,2]*b[2,1]
+//      * c[0,1,0] = a[0,1,0]*b[0,0] + a[0,1,1]*b[1,0] + a[0,1,2]*b[2,0]
+//      * c[0,1,1] = a[0,1,0]*b[0,1] + a[0,1,1]*b[1,1] + a[0,1,2]*b[2,1]
+//      * c[1,0,0] = a[1,0,0]*b[0,0] + a[1,0,1]*b[1,0] + a[1,0,2]*b[2,0]
+//      * c[1,0,1] = a[1,0,0]*b[0,1] + a[1,0,1]*b[1,1] + a[1,0,2]*b[2,1]
+//      * c[1,1,0] = a[1,1,0]*b[0,0] + a[1,1,1]*b[1,0] + a[1,1,2]*b[2,0]
+//      * c[1,1,1] = a[1,1,0]*b[0,1] + a[1,1,1]*b[1,1] + a[1,1,2]*b[2,1]
+//     */
 
-    uint8_t din = ashape[a->ndim-2], dmid = bshape[b->ndim-2], dout = cshape[c->ndim-1];
-    for (uint16_t itr = 0; itr < nitr; itr++) {
-        for (uint8_t i = 0; i < din; i++) {
-            for (uint8_t o = 0; o < dout; o++) {
+//     uint8_t din = ashape[a->ndim-2], dmid = bshape[b->ndim-2], dout = cshape[c->ndim-1];
+//     for (uint16_t itr = 0; itr < nitr; itr++) {
+//         for (uint8_t i = 0; i < din; i++) {
+//             for (uint8_t o = 0; o < dout; o++) {
 
-                float acc = 0;
-                printf("c[%d] = ", i * dout + o + coff);
-                for (uint8_t m = 0; m < dmid; m++) {
-                    printf("%.4f * %.4f", a->data[i * dmid + m + aoff], b->data[m * dout + o + boff]);
-                    acc += a->data[i * dmid + m + aoff] * b->data[m * dout + o + boff];
-                    if (m < dmid - 1) printf(" + ");
-                }
-                printf("\n");
-                c->data[i * dout + o + coff] = acc;
+//                 float acc = 0;
+//                 printf("c[%d] = ", i * dout + o + coff);
+//                 for (uint8_t m = 0; m < dmid; m++) {
+//                     printf("%.4f * %.4f", a->data[i * dmid + m + aoff], b->data[m * dout + o + boff]);
+//                     acc += a->data[i * dmid + m + aoff] * b->data[m * dout + o + boff];
+//                     if (m < dmid - 1) printf(" + ");
+//                 }
+//                 printf("\n");
+//                 c->data[i * dout + o + coff] = acc;
 
-            }
-            // coff += cstep;
-        }
-        // coff += cstep;
-        // boff = (boff + bstep) % b->nelem;
-        // aoff = (aoff + astep) % a->nelem;
-    }
+//             }
+//             // coff += cstep;
+//         }
+//         // coff += cstep;
+//         // boff = (boff + bstep) % b->nelem;
+//         // aoff = (aoff + astep) % a->nelem;
+//     }
 
-    printf("c:\n");
-    print(c);
-    printf("\n");
+//     printf("c:\n");
+//     print(c);
+//     printf("\n");
 
-    free(ashape);
-    free(bshape);
-    free(cshape);
+//     free(ashape);
+//     free(bshape);
+//     free(cshape);
 
-    return NULL;
-}
+//     return NULL;
+// }
 
 /************************* HELPER FUNCTIONS *************************/
 
@@ -501,7 +866,7 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
-void print(tensor_t *t) {
+void print(FILE *stream, tensor_t *t) {
     if (t == NULL || t->shape == NULL || t->data == NULL) return;
     
     // shape multiples (how many elements fit in each dimension)
@@ -519,8 +884,10 @@ void print(tensor_t *t) {
         return;
     }
 
-    float maxel = 0;
-    if (!max(t, &maxel)) return;
+    tensor_t *maxt = max(t);
+    if (maxt == NULL) return;
+    float maxel = *maxt->data;
+    tensor_free(maxt);
     uint8_t ndigits = int_digits(maxel);
     bool decimals = false;
     for (uint32_t i = 0; i < t->nelem && !decimals; i++) decimals = has_decimals(t->data[i]);
@@ -534,19 +901,19 @@ void print(tensor_t *t) {
         for (uint8_t dim = 0; dim < ndim-1; dim++) {
             mod[dim] = i % mul[dim];
             if (mod[dim] == 0) {
-                for (uint8_t j = 0; j < ndim-dim-1 && i > 0; j++) printf("\n");
+                for (uint8_t j = 0; j < ndim-dim-1 && i > 0; j++) fprintf(stream, "\n");
                 break;
             }
         }
 
-        for (uint8_t j = 0; j < ndim-1; j++) printf(mod[j] == 0 ? "[" : " ");
-        printf("[");
+        for (uint8_t j = 0; j < ndim-1; j++) fprintf(stream, mod[j] == 0 ? "[" : " ");
+        fprintf(stream, "[");
         for (uint16_t j = 0; j < mul[ndim-1]; j++) {
-            printf(fmt, ndigits, t->data[i++]);
-            if (j < mul[ndim-1] - 1) printf(" ");
+            fprintf(stream, fmt, ndigits, t->data[i++]);
+            if (j < mul[ndim-1] - 1) fprintf(stream, " ");
         }
-        for (uint8_t j = 0; j < ndim-1; j++) if (mod[j] == mul[j] - mul[ndim-1]) printf("]");
-        printf("]\n");
+        for (uint8_t j = 0; j < ndim-1; j++) if (mod[j] == mul[j] - mul[ndim-1]) fprintf(stream, "]");
+        fprintf(stream, "]\n");
     }
 
     free(mul);
