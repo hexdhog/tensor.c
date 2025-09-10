@@ -304,13 +304,10 @@ tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim) {
     uint32_t stride = mnext;
     uint32_t nstride = t->shape[d];
 
-    uint32_t step = 0, nstep = 0;
+    uint32_t step = 1, nstep = mnext;
     if (d == t->ndim - 1) {
         step = t->shape[d];
         nstep = mprev;
-    } else {
-        step = 1;
-        nstep = mnext;
     }
 
     uint32_t shift = 0, nshift = 1;
