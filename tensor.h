@@ -9,16 +9,15 @@
 #include <stdbool.h>
 #include <assert.h>
 
-typedef struct
-{
+// TODO: add strides
+typedef struct {
     uint8_t ndim;
     uint16_t *shape;
     uint32_t nelem;
     float *data;
 } tensor_t;
 
-typedef enum
-{
+typedef enum {
     OP_ADD,
     OP_MUL
 } tensor_op_t;

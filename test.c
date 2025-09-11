@@ -152,6 +152,5 @@ int main(int argc, char **argv) {
     for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) {
         printf("%s\n", fnx[i]());
     }
-
     return 0;
 }
