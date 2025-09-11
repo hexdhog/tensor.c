@@ -238,22 +238,36 @@ tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim) {
 
     uint16_t *shape = (uint16_t *) malloc(t->ndim * sizeof(*shape));
     assert(shape != NULL);
-    memcpy(shape, t->shape, t->ndim * sizeof(*shape));
+    for (uint8_t i = 0; i < t->ndim; i++) shape[i] = t->shape[i];
+    // memcpy(shape, t->shape, t->ndim * sizeof(*shape));
     shape[d] = 1;
     tensor_t *r = tensor_alloc(t->ndim, shape);
     assert(r != NULL);
     free(shape);
 
     // TODO: write about new reduce implementation in sum.ipynb
-    uint32_t outer = 1, dimsz = shape[d], inner = 1;
+    uint32_t outer = 1, dimsz = t->shape[d], inner = 1;
     for (uint8_t i = 0; i < d; i++) outer *= t->shape[i];
     for (uint8_t i = d+1; i < t->ndim; i++) inner *= t->shape[i];
+
+    // printf("shape: ");
+    // print_shape(t->ndim, t->shape);
+    // printf("\n");
+    // printf("  dim: %d\n", d);
+    // printf("outer: %d\n", outer);
+    // printf("dimsz: %d\n", dimsz);
+    // printf("inner: %d\n", inner);
 
     for (uint32_t o = 0; o < outer; o++) {
         for (uint32_t i = 0; i < inner; i++) {
             float acc = 0;
-            for (uint32_t j = 0; j < dimsz; j++)
+            // printf("r[%d] = ", o * inner + i);
+            for (uint32_t j = 0; j < dimsz; j++) {
                 acc += t->data[o * dimsz * inner + j * inner + i];
+                // printf("t[%d]", o * dimsz * inner + j * inner + i);
+                // if (j < dimsz-1) printf(" + ");
+            }
+            // printf("\n");
             r->data[o * inner + i] = acc;
         }
     }
@@ -437,7 +451,7 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
-void print(FILE *stream, tensor_t *t) {
+void fprint(FILE *stream, tensor_t *t) {
     if (t == NULL || t->shape == NULL || t->data == NULL) return;
 
     // shape multiples (how many elements fit in each dimension)
@@ -491,7 +505,15 @@ void print(FILE *stream, tensor_t *t) {
     free(mod);
 }
 
-void shape_print(FILE *stream, uint8_t ndim, uint16_t *shape) {
+void print(tensor_t *t) {
+    fprint(stdout, t);
+}
+
+void print_shape(uint8_t ndim, uint16_t *shape) {
+    fprint_shape(stdout, ndim, shape);
+}
+
+void fprint_shape(FILE *stream, uint8_t ndim, uint16_t *shape) {
     if (shape == NULL) return;
     fprintf(stream, "(");
     for (uint8_t i = 0; i < ndim; i++) {

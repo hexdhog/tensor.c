@@ -37,7 +37,9 @@ tensor_t *mul(tensor_t *a, tensor_t *b);
 // tensor_t *dot(tensor_t *a, tensor_t *b);
 tensor_t *min(tensor_t *t);
 tensor_t *max(tensor_t *t);
-void shape_print(FILE *stream, uint8_t ndim, uint16_t *shape);
-void print(FILE *stream, tensor_t *t);
+void fprint_shape(FILE *stream, uint8_t ndim, uint16_t *shape);
+void print_shape(uint8_t ndim, uint16_t *shape);
+void fprint(FILE *stream, tensor_t *t);
+void print(tensor_t *t);
 
 #endif
