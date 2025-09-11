@@ -7,6 +7,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdbool.h>
+#include <assert.h>
 
 typedef struct
 {
