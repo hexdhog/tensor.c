@@ -24,8 +24,7 @@
 } while (0)
 
 const char *test_sumall() {
-    uint16_t shape[] = {2, 3};
-    tensor_t *t = tensor_alloc(2, shape);
+    tensor_t *t = tensor_alloc(2, (shape_t[]){2, 3});
     for (int i = 0; i < 6; i++) t->data[i] = i + 1; // [1,2,3,4,5,6]
 
     tensor_t *r = sumall(t);
@@ -40,8 +39,7 @@ const char *test_sumall() {
 }
 
 const char *test_sum_dim0() {
-    uint16_t shape[] = {2, 3};
-    tensor_t *t = tensor_alloc(2, shape);
+    tensor_t *t = tensor_alloc(2, (shape_t[]){2, 3});
     float vals[] = {1,2,3,4,5,6};
     for (int i = 0; i < 6; i++) t->data[i] = vals[i];
 
@@ -59,8 +57,7 @@ const char *test_sum_dim0() {
 }
 
 const char *test_sum_dim1_keepdim() {
-    uint16_t shape[] = {2, 3};
-    tensor_t *t = tensor_alloc(2, shape);
+    tensor_t *t = tensor_alloc(2, (shape_t[]){2, 3});
     float vals[] = {1,2,3,4,5,6};
     for (int i = 0; i < 6; i++) t->data[i] = vals[i];
 
@@ -77,8 +74,7 @@ const char *test_sum_dim1_keepdim() {
 }
 
 const char *test_sum_negative_dim() {
-    uint16_t shape[] = {2, 3};
-    tensor_t *t = tensor_alloc(2, shape);
+    tensor_t *t = tensor_alloc(2, (shape_t[]){2, 3});
     float vals[] = {1,2,3,4,5,6};
     for (int i = 0; i < 6; i++) t->data[i] = vals[i];
 
@@ -96,7 +92,7 @@ const char *test_sum_negative_dim() {
 
 const char *test_sum_dim_out_of_range() {
     CHECK_ABORT({
-        tensor_t *t = tensor_alloc(2, (uint16_t[]){2, 2});
+        tensor_t *t = tensor_alloc(2, (shape_t[]){2, 2});
         for (int i = 0; i < 4; i++) t->data[i] = i+1;
         sum(t, 2, false); // invalid dim, should hit assert and abort
     });
@@ -105,7 +101,7 @@ const char *test_sum_dim_out_of_range() {
 }
 
 const char *test_sum_dim4() {
-    tensor_t *t = tensor_alloc(4, (uint16_t[]){2, 3, 2, 4});
+    tensor_t *t = tensor_alloc(4, (shape_t[]){2, 3, 2, 4});
     for (uint32_t i = 0; i < t->nelem; i++) t->data[i] = i + 1;
 
     // comparing results with pytorch's
