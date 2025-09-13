@@ -3,6 +3,7 @@
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define RESOLVE_DIM(dim, ndim) ((dim_t)((dim) >= 0 ? (dim) : (dim) + (ndim)))
+#define SWAP(a, b) do { typeof(a) tmp = (a); (a) = (b); (b) = tmp; } while (0)
 
 /**
  * Creates a tensor and allocates the required memory for it
@@ -11,7 +12,8 @@
  * @param shape shape of the tensor
  * @return pointer to the created tensor
  */
-tensor_t *tensor_alloc(dim_t ndim, shape_t *shape) {
+tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
+    assert(ndim > 0); // TODO: should tensors be allowed to have 0 dimensions (for single values)?
     assert(shape != NULL);
 
     tensor_t *t = malloc(sizeof(tensor_t));
@@ -19,9 +21,13 @@ tensor_t *tensor_alloc(dim_t ndim, shape_t *shape) {
 
     t->ndim = ndim;
     t->shape = malloc(ndim * sizeof(*t->shape));
-    t->stride = malloc(ndim * sizeof(*t->stride));
     assert(t->shape != NULL);
     memcpy(t->shape, shape, ndim * sizeof(*t->shape));
+
+    t->stride = malloc(ndim * sizeof(*t->stride));
+    assert(t->stride != NULL);
+    t->stride[ndim-1] = 1;
+    for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * t->shape[i+1];
 
     t->nelem = 0;
     for (dim_t i = 0; i < ndim; i++) t->nelem = (t->nelem > 0 ? t->nelem : 1) * t->shape[i];
@@ -65,7 +71,7 @@ void tensor_free(tensor_t *t) {
  * @param bshape new shape for tensor two (pass NULL if not interested in new shape for tensor two)
  * @return number of dimensions of the broadcasted shapes, or 0 if shapes are not broadcastable
  */
-uint8_t broadcast(tensor_t *a, shape_t **ashape, tensor_t *b, shape_t **bshape) {
+uint8_t broadcast(tensor_t *a, dim_sz_t **ashape, tensor_t *b, dim_sz_t **bshape) {
     assert(a != NULL);
     assert(b != NULL);
     assert(a->shape != NULL);
@@ -74,14 +80,14 @@ uint8_t broadcast(tensor_t *a, shape_t **ashape, tensor_t *b, shape_t **bshape) 
     dim_t ndim = MAX(a->ndim, b->ndim);
     dim_t offa = ndim - a->ndim, offb = ndim - b->ndim;
 
-    shape_t *_ashape = malloc(ndim * sizeof(*a->shape));
+    dim_sz_t *_ashape = malloc(ndim * sizeof(*a->shape));
     assert(_ashape != NULL);
-    shape_t *_bshape = malloc(ndim * sizeof(*b->shape));
+    dim_sz_t *_bshape = malloc(ndim * sizeof(*b->shape));
     assert(_bshape != NULL);
 
     for (dim_t i = 0; i < ndim; i++) {
-        shape_t sa = i < offa ? 1 : a->shape[i - offa];
-        shape_t sb = i < offb ? 1 : b->shape[i - offb];
+        dim_sz_t sa = i < offa ? 1 : a->shape[i - offa];
+        dim_sz_t sb = i < offb ? 1 : b->shape[i - offb];
         if (sa != sb && sa != 1 && sb != 1) {
             free(_ashape);
             free(_bshape);
@@ -130,7 +136,7 @@ tensor_t *unsqueeze(tensor_t *t, dim_t dim) {
     dim_t d = RESOLVE_DIM(dim, t->ndim);
     if (d >= t->ndim) return t;
     dim_t ndim = t->ndim + 1;
-    shape_t *shape = malloc(ndim * sizeof(*shape));
+    dim_sz_t *shape = malloc(ndim * sizeof(*shape));
     assert(shape != NULL);
     for (dim_t i = 0; i < d; i++) shape[i] = t->shape[i];
     shape[d] = 1;
@@ -141,8 +147,14 @@ tensor_t *unsqueeze(tensor_t *t, dim_t dim) {
     return t;
 }
 
-// TODO: transpose implementation
 tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
+    dim1 = RESOLVE_DIM(dim1, t->ndim);
+    assert(dim1 < t->ndim);
+    dim2 = RESOLVE_DIM(dim2, t->ndim);
+    assert(dim2 < t->ndim);
+    if (dim1 == dim2) return t;
+    SWAP(t->shape[dim1], t->shape[dim2]);
+    SWAP(t->stride[dim1], t->stride[dim2]);
     return t;
 }
 
@@ -154,12 +166,12 @@ tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
  * @param shape new shape
  * @return pointer to the reshaped tensor
  */
-tensor_t *reshape(tensor_t *t, dim_t ndim, shape_t *shape) {
+tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
     assert(t != NULL);
     uint32_t nelem = ndim > 0 ? 1 : 0;
     for (dim_t i = 0; i < ndim; i++) nelem *= shape[i];
     assert(t->nelem == nelem);
-    shape_t *new_shape = realloc(t->shape, ndim * sizeof(*t->shape));
+    dim_sz_t *new_shape = realloc(t->shape, ndim * sizeof(*t->shape));
     assert(new_shape != NULL);
     memcpy(new_shape, shape, ndim * sizeof(*shape));
     t->shape = new_shape;
@@ -181,7 +193,7 @@ tensor_t *min(tensor_t *t) {
     assert(t->shape != NULL);
     assert(t->data != NULL);
     assert(t->nelem >= 1);
-    tensor_t *r = tensor_alloc(1, (shape_t[]){1});
+    tensor_t *r = tensor_alloc(1, (dim_sz_t[]){1});
     float m = t->data[0];
     for (uint32_t i = 1; i < t->nelem; i++) if (t->data[i] < m) m = t->data[i];
     *r->data = m;
@@ -199,7 +211,7 @@ tensor_t *max(tensor_t *t) {
     assert(t->shape != NULL);
     assert(t->data != NULL);
     assert(t->nelem >= 1);
-    tensor_t *r = tensor_alloc(1, (shape_t[]){1});
+    tensor_t *r = tensor_alloc(1, (dim_sz_t[]){1});
     float m = t->data[0];
     for (uint32_t i = 1; i < t->nelem; i++) if (t->data[i] > m) m = t->data[i];
     *r->data = m;
@@ -216,7 +228,7 @@ tensor_t *sumall(tensor_t *t) {
     assert(t != NULL);
     assert(t->shape != NULL);
     assert(t->data != NULL);
-    tensor_t *r = tensor_alloc(1, (shape_t[]){1});
+    tensor_t *r = tensor_alloc(1, (dim_sz_t[]){1});
     float acc = 0;
     for (uint32_t i = 0; i < t->nelem; i++) acc += t->data[i];
     *r->data = acc;
@@ -238,7 +250,7 @@ tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim) {
     dim_t d = RESOLVE_DIM(dim, t->ndim);
     assert(d < t->ndim);
 
-    shape_t *shape = malloc(t->ndim * sizeof(*shape));
+    dim_sz_t *shape = malloc(t->ndim * sizeof(*shape));
     assert(shape != NULL);
     memcpy(shape, t->shape, t->ndim * sizeof(*shape));
     shape[d] = 1;
@@ -280,18 +292,16 @@ static tensor_t *ewop(tensor_t *a, tensor_t *b, tensor_op_t op) {
     assert(a != NULL);
     assert(b != NULL);
 
-    shape_t *ashape, *bshape;
+    dim_sz_t *ashape, *bshape;
     dim_t ndim = broadcast(a, &ashape, b, &bshape);
     assert(ndim > 0);
 
-    shape_t *cshape = malloc(ndim * sizeof(*cshape));
+    dim_sz_t *cshape = malloc(ndim * sizeof(*cshape));
     assert(cshape != NULL);
-    uint32_t nelem = ndim > 0 ? 1 : 0;
-    for (dim_t i = 0; i < ndim; i++) {
-        cshape[i] = MAX(ashape[i], bshape[i]);
-        nelem *= cshape[i];
-    }
+    for (dim_t i = 0; i < ndim; i++) cshape[i] = MAX(ashape[i], bshape[i]);
     tensor_t *c = tensor_alloc(ndim, cshape);
+    free(ashape);
+    free(bshape);
     free(cshape);
 
     for (uint32_t cidx = 0; cidx < c->nelem; cidx++) {
@@ -323,119 +333,6 @@ tensor_t *mul(tensor_t *a, tensor_t *b) {
     return ewop(a, b, OP_MUL);
 }
 
-// tensor_t *dot(tensor_t *a, tensor_t *b) {
-//     if (a == NULL || b == NULL || (a->ndim < 2 && b->ndim < 2)) return NULL;
-
-//     printf("a.shape: ");
-//     shape_print(stdout, a->ndim, a->shape);
-//     printf("\n");
-
-//     unsqueeze(b, b->ndim-2);
-//     printf("b.shape: ");
-//     shape_print(stdout, b->ndim, b->shape);
-//     printf("\n");
-
-//     uint16_t *ashape, *bshape;
-//     b->ndim--; // last dim of a must match second to last dim of b
-//     uint8_t ndim = broadcast(a, &ashape, b, &bshape);
-//     b->ndim++;
-//     printf("ndim: %d\n", ndim);
-//     if (ndim == 0) return NULL;
-
-//     printf("ashape: ");
-//     shape_print(stdout, ndim, ashape);
-//     printf("\n");
-//     printf("bshape: ");
-//     shape_print(stdout, ndim, bshape);
-//     printf("\n");
-
-//     uint16_t *cshape = (uint16_t *) malloc(ndim * sizeof(*cshape));
-//     if (cshape == NULL) return NULL;
-//     uint32_t nelem = 0;
-//     for (uint8_t i = 0; i < ndim; i++) {
-//         cshape[i] = MAX(ashape[i], bshape[i]);
-//         nelem = (nelem > 0 ? nelem : 1) * cshape[i];
-//     }
-//     cshape[ndim-1] = b->shape[b->ndim-1];
-//     tensor_t *c = tensor_alloc(ndim, cshape);
-//     if (c == NULL) {
-//         free(ashape);
-//         free(bshape);
-//         free(cshape);
-//         return NULL;
-//     }
-//     printf("cshape: ");
-//     shape_print(stdout, ndim, cshape);
-//     printf("\n");
-
-//     printf("a:\n");
-//     print(a);
-//     printf("\n");
-
-//     printf("b:\n");
-//     print(b);
-//     printf("\n");
-
-//     uint32_t aoff = 0, boff = 0, coff = 0;
-//     uint32_t astep = ashape[a->ndim-1] * ashape[a->ndim-2];
-//     uint32_t bstep = bshape[b->ndim-1] * bshape[b->ndim-2];
-//     uint32_t cstep = cshape[c->ndim-1] * cshape[c->ndim-2];
-//     uint32_t nitr = c->nelem / cstep;
-
-//     // coff += cstep;
-//     nitr = 1;
-
-//     /**
-//      * a.shape = (2, 2, 3)
-//      * b.shape = (3, 2)
-//      * c.shape = (2, 2, 2)
-//      * 
-//      * c[0,0,0] = a[0,0] * b[:,0]
-//      * 
-//      * c[0,0,0] = a[0,0,0]*b[0,0] + a[0,0,1]*b[1,0] + a[0,0,2]*b[2,0]
-//      * c[0,0,1] = a[0,0,0]*b[0,1] + a[0,0,1]*b[1,1] + a[0,0,2]*b[2,1]
-//      * c[0,1,0] = a[0,1,0]*b[0,0] + a[0,1,1]*b[1,0] + a[0,1,2]*b[2,0]
-//      * c[0,1,1] = a[0,1,0]*b[0,1] + a[0,1,1]*b[1,1] + a[0,1,2]*b[2,1]
-//      * c[1,0,0] = a[1,0,0]*b[0,0] + a[1,0,1]*b[1,0] + a[1,0,2]*b[2,0]
-//      * c[1,0,1] = a[1,0,0]*b[0,1] + a[1,0,1]*b[1,1] + a[1,0,2]*b[2,1]
-//      * c[1,1,0] = a[1,1,0]*b[0,0] + a[1,1,1]*b[1,0] + a[1,1,2]*b[2,0]
-//      * c[1,1,1] = a[1,1,0]*b[0,1] + a[1,1,1]*b[1,1] + a[1,1,2]*b[2,1]
-//     */
-
-//     uint8_t din = ashape[a->ndim-2], dmid = bshape[b->ndim-2], dout = cshape[c->ndim-1];
-//     for (uint16_t itr = 0; itr < nitr; itr++) {
-//         for (uint8_t i = 0; i < din; i++) {
-//             for (uint8_t o = 0; o < dout; o++) {
-
-//                 float acc = 0;
-//                 printf("c[%d] = ", i * dout + o + coff);
-//                 for (uint8_t m = 0; m < dmid; m++) {
-//                     printf("%.4f * %.4f", a->data[i * dmid + m + aoff], b->data[m * dout + o + boff]);
-//                     acc += a->data[i * dmid + m + aoff] * b->data[m * dout + o + boff];
-//                     if (m < dmid - 1) printf(" + ");
-//                 }
-//                 printf("\n");
-//                 c->data[i * dout + o + coff] = acc;
-
-//             }
-//             // coff += cstep;
-//         }
-//         // coff += cstep;
-//         // boff = (boff + bstep) % b->nelem;
-//         // aoff = (aoff + astep) % a->nelem;
-//     }
-
-//     printf("c:\n");
-//     print(c);
-//     printf("\n");
-
-//     free(ashape);
-//     free(bshape);
-//     free(cshape);
-
-//     return NULL;
-// }
-
 /************************* HELPER FUNCTIONS *************************/
 
 static uint8_t int_digits(double a) {
@@ -450,26 +347,33 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
-void fprint(FILE *stream, tensor_t *t) {
-    if (t == NULL || t->shape == NULL || t->data == NULL) return;
-
-    // shape multiples (how many elements fit in each dimension)
-    uint16_t *mul = (uint16_t *) malloc(t->ndim * sizeof(*t->shape));
-    if (mul == NULL) return;
-    uint8_t ndim = t->ndim;
-    mul[ndim-1] = t->shape[ndim-1];
-    for (int8_t i = ndim-2; i >= 0; i--) mul[i] = mul[i+1] * t->shape[i];
-
-    // shape modulus for current index (shape[i] = idx % shape[i])
-    // no need to save the last dimension's modulus as the loop steps by its value (will always be 0)
-    uint16_t *mod = (uint16_t *) malloc((t->ndim - 1) * sizeof(*t->shape));
-    if (mod == NULL) {
-        free(mul);
-        return;
+static void tfprint_data(FILE *stream, const char *fmt, uint8_t ndigits, tensor_t *t, dim_t dim, dim_sz_t *indeces) {
+    for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
+        indeces[dim] = i;
+        if (dim == t->ndim-1) {
+            uint32_t idx = 0;
+            for (dim_t d = 0; d < t->ndim; d++) idx += indeces[d] * t->stride[d];
+            fprintf(stream, fmt, ndigits, t->data[idx]);
+            if (i < t->shape[dim]-1) printf(" ");
+        } else {
+            tfprint_data(stream, fmt, ndigits, t, dim+1, indeces);
+            fprintf(stream, "\n");
+        }
     }
+}
+
+void tfprint(FILE *stream, tensor_t *t) {
+    assert(t != NULL);
+    assert(t->shape != NULL);
+    assert(t->ndim > 0);
+    assert(t->stride != NULL);
+    assert(t->data != NULL);
+
+    dim_sz_t *indeces = malloc(t->ndim * sizeof(*indeces));
+    assert(indeces != NULL);
+    memset(indeces, 0, t->ndim * sizeof(*indeces));
 
     tensor_t *maxt = max(t);
-    if (maxt == NULL) return;
     float maxel = *maxt->data;
     tensor_free(maxt);
     uint8_t ndigits = int_digits(maxel);
@@ -481,43 +385,24 @@ void fprint(FILE *stream, tensor_t *t) {
         ndigits += 5;
     }
 
-    for (uint32_t i = 0; i < t->nelem;) {
-        for (uint8_t dim = 0; dim < ndim-1; dim++) {
-            mod[dim] = i % mul[dim];
-            if (mod[dim] == 0) {
-                for (uint8_t j = 0; j < ndim-dim-1 && i > 0; j++) fprintf(stream, "\n");
-                break;
-            }
-        }
-
-        for (uint8_t j = 0; j < ndim-1; j++) fprintf(stream, mod[j] == 0 ? "[" : " ");
-        fprintf(stream, "[");
-        for (uint16_t j = 0; j < mul[ndim-1]; j++) {
-            fprintf(stream, fmt, ndigits, t->data[i++]);
-            if (j < mul[ndim-1] - 1) fprintf(stream, " ");
-        }
-        for (uint8_t j = 0; j < ndim-1; j++) if (mod[j] == mul[j] - mul[ndim-1]) fprintf(stream, "]");
-        fprintf(stream, "]\n");
-    }
-
-    free(mul);
-    free(mod);
+    tfprint_data(stream, fmt, ndigits, t, 0, indeces);
+    free(indeces);
 }
 
-void print(tensor_t *t) {
-    fprint(stdout, t);
+void tprint(tensor_t *t) {
+    tfprint(stdout, t);
 }
 
-void print_shape(uint8_t ndim, uint16_t *shape) {
-    fprint_shape(stdout, ndim, shape);
-}
-
-void fprint_shape(FILE *stream, uint8_t ndim, uint16_t *shape) {
-    if (shape == NULL) return;
+void tfprint_tuple(FILE *stream, uint32_t n, uint32_t *tuple) {
+    if (tuple == NULL) return;
     fprintf(stream, "(");
-    for (uint8_t i = 0; i < ndim; i++) {
-        fprintf(stream, "%d", shape[i]);
-        if (i < ndim - 1) fprintf(stream, ", ");
+    for (uint8_t i = 0; i < n; i++) {
+        fprintf(stream, "%d", tuple[i]);
+        if (i < n - 1) fprintf(stream, ", ");
     }
     fprintf(stream, ")");
+}
+
+void tprint_tuple(uint32_t n, uint32_t *tuple) {
+    tfprint_tuple(stdout, n, tuple);
 }
