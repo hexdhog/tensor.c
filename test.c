@@ -170,5 +170,16 @@ int main(int argc, char **argv) {
     printf("t.data = \n");
     tprint(t);
 
+    printf("\n");
+    reshape(t, 6, (dim_sz_t[]){2, 1, 2, 2, 3, 1});
+    printf("t.shape = ");
+    tprint_tuple(t->ndim, t->shape);
+    printf("\n");
+    printf("t.stride = ");
+    tprint_tuple(t->ndim, t->stride);
+    printf("\n");
+    printf("t.data = \n");
+    tprint(t);
+
     return 0;
 }

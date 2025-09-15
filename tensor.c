@@ -168,14 +168,22 @@ tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
  */
 tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
     assert(t != NULL);
+
     uint32_t nelem = ndim > 0 ? 1 : 0;
     for (dim_t i = 0; i < ndim; i++) nelem *= shape[i];
     assert(t->nelem == nelem);
-    dim_sz_t *new_shape = realloc(t->shape, ndim * sizeof(*t->shape));
-    assert(new_shape != NULL);
-    memcpy(new_shape, shape, ndim * sizeof(*shape));
-    t->shape = new_shape;
+
+    t->shape = realloc(t->shape, ndim * sizeof(*t->shape));
+    assert(t->shape != NULL);
+    memcpy(t->shape, shape, ndim * sizeof(*shape));
+
+    t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
+    assert(t->stride != NULL);
+    t->stride[ndim-1] = 1;
+    for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * t->shape[i+1];
+
     t->ndim = ndim;
+
     return t;
 }
 
@@ -347,30 +355,40 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
-static void tfprint_data(FILE *stream, const char *fmt, uint8_t ndigits, tensor_t *t, dim_t dim, dim_sz_t *indeces, uint32_t *mul) {
+static bool tfprint_data(FILE *stream, const char *fmt, uint8_t ndigits, tensor_t *t, dim_t dim, dim_sz_t *indeces, uint32_t *mul) {
     if (dim == t->ndim-1) {
+        // calculate current position in the printed tensor: [0, t->nelem]
+        uint32_t pos = 0;
+        for (dim_t d = 0; d < dim; d++) pos += indeces[d] * mul[d];
+        // if current pos is a multiple of dim size -> beginning of array
+        for (dim_t d = 0; d < dim; d++) fprintf(stream, pos % (t->shape[d] * mul[d]) == 0 ? "[" : " ");
+
+        // calculate current offset in t->data and print next row
         uint32_t off = 0;
-        for (dim_t d = 0; d < dim; d++) off += indeces[d] * mul[d];
-        for (dim_t d = 0; d < dim; d++) fprintf(stream, off % (t->shape[d] * mul[d]) == 0 ? "[" : " ");
+        for (dim_t d = 0; d < dim; d++) off += indeces[d] * t->stride[d];
         fprintf(stream, "[");
         for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
-            indeces[dim] = i;
-            uint32_t idx = 0;
-            for (dim_t d = 0; d < t->ndim; d++) idx += indeces[d] * t->stride[d];
-            fprintf(stream, fmt, ndigits, t->data[idx]);
+            fprintf(stream, fmt, ndigits, t->data[off + i * t->stride[dim]]);
             if (i < t->shape[dim]-1) printf(" ");
         }
         fprintf(stream, "]");
-        off += t->shape[dim];
-        for (dim_t d = 0; d < dim; d++) if (off % (t->shape[d] * mul[d]) == 0) printf("]");
-    } else {
-        for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
-            indeces[dim] = i;
-            tfprint_data(stream, fmt, ndigits, t, dim+1, indeces, mul);
-            fprintf(stream, "\n");
-        }
-        indeces[dim] = 0;
+
+        pos += t->shape[dim]; // move pos to the end of what has just been printed
+        // if current pos is a multiple of dim size -> end of array
+        for (dim_t d = 0; d < dim; d++) if (pos % (t->shape[d] * mul[d]) == 0) printf("]");
+        return pos == t->nelem; // let the caller know whether all the elements have been printed
     }
+
+    bool end = false; // finished printing all elements?
+    for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
+        indeces[dim] = i;
+        if (tfprint_data(stream, fmt, ndigits, t, dim+1, indeces, mul)) end = true;
+        if (!end) fprintf(stream, "\n");
+    }
+    if (end && dim == 0) fprintf(stream, "\n");
+    indeces[dim] = 0;
+
+    return end;
 }
 
 void tfprint(FILE *stream, tensor_t *t) {
