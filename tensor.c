@@ -347,18 +347,29 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
-static void tfprint_data(FILE *stream, const char *fmt, uint8_t ndigits, tensor_t *t, dim_t dim, dim_sz_t *indeces) {
-    for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
-        indeces[dim] = i;
-        if (dim == t->ndim-1) {
+static void tfprint_data(FILE *stream, const char *fmt, uint8_t ndigits, tensor_t *t, dim_t dim, dim_sz_t *indeces, uint32_t *mul) {
+    if (dim == t->ndim-1) {
+        uint32_t off = 0;
+        for (dim_t d = 0; d < dim; d++) off += indeces[d] * mul[d];
+        for (dim_t d = 0; d < dim; d++) fprintf(stream, off % (t->shape[d] * mul[d]) == 0 ? "[" : " ");
+        fprintf(stream, "[");
+        for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
+            indeces[dim] = i;
             uint32_t idx = 0;
             for (dim_t d = 0; d < t->ndim; d++) idx += indeces[d] * t->stride[d];
             fprintf(stream, fmt, ndigits, t->data[idx]);
             if (i < t->shape[dim]-1) printf(" ");
-        } else {
-            tfprint_data(stream, fmt, ndigits, t, dim+1, indeces);
+        }
+        fprintf(stream, "]");
+        off += t->shape[dim];
+        for (dim_t d = 0; d < dim; d++) if (off % (t->shape[d] * mul[d]) == 0) printf("]");
+    } else {
+        for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
+            indeces[dim] = i;
+            tfprint_data(stream, fmt, ndigits, t, dim+1, indeces, mul);
             fprintf(stream, "\n");
         }
+        indeces[dim] = 0;
     }
 }
 
@@ -368,10 +379,6 @@ void tfprint(FILE *stream, tensor_t *t) {
     assert(t->ndim > 0);
     assert(t->stride != NULL);
     assert(t->data != NULL);
-
-    dim_sz_t *indeces = malloc(t->ndim * sizeof(*indeces));
-    assert(indeces != NULL);
-    memset(indeces, 0, t->ndim * sizeof(*indeces));
 
     tensor_t *maxt = max(t);
     float maxel = *maxt->data;
@@ -385,8 +392,18 @@ void tfprint(FILE *stream, tensor_t *t) {
         ndigits += 5;
     }
 
-    tfprint_data(stream, fmt, ndigits, t, 0, indeces);
+    dim_sz_t *indeces = malloc(t->ndim * sizeof(*indeces));
+    assert(indeces != NULL);
+    memset(indeces, 0, t->ndim * sizeof(*indeces));
+
+    dim_sz_t *mul = malloc(t->ndim * sizeof(*mul));
+    assert(mul != NULL);
+    mul[t->ndim-1] = 1;
+    for (dim_t i = t->ndim-2; i >= 0; i--) mul[i] = mul[i+1] * t->shape[i+1];
+
+    tfprint_data(stream, fmt, ndigits, t, 0, indeces, mul);
     free(indeces);
+    free(mul);
 }
 
 void tprint(tensor_t *t) {
