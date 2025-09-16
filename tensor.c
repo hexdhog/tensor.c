@@ -32,10 +32,10 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
     t->stride[ndim-1] = 1;
     for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * t->shape[i+1];
 
-    t->nelem = 0;
-    for (dim_t i = 0; i < ndim; i++) t->nelem = (t->nelem > 0 ? t->nelem : 1) * t->shape[i];
+    t->numel = 0;
+    for (dim_t i = 0; i < ndim; i++) t->numel = (t->numel > 0 ? t->numel : 1) * t->shape[i];
 
-    t->data = malloc(t->nelem * sizeof(*t->data));
+    t->data = malloc(t->numel * sizeof(*t->data));
     assert(t->data != NULL);
 
     return t;
@@ -116,11 +116,11 @@ tensor_t *contiguous(tensor_t *t) {
     dim_sz_t *index = malloc(t->ndim * sizeof(*index));
     assert(index != NULL);
 
-    float *data = malloc(t->nelem * sizeof(*data));
+    float *data = malloc(t->numel * sizeof(*data));
     assert(data != NULL);
 
     size_t idx = 0;
-    for (uint32_t i = 0; i < t->nelem; i++) {
+    for (uint32_t i = 0; i < t->numel; i++) {
         data[i] = t->data[idx];
         for (dim_t d = t->ndim-1; d >= 0; d--) {
             index[d]++;
@@ -143,12 +143,12 @@ tensor_t *contiguous(tensor_t *t) {
 /**
  * Resolves shapes with an element with a negative element.
  * 
- * @param nelem number of total elements in tensor
+ * @param numel number of total elements in tensor
  * @param ndim number of dimensions in shape
  * @param shape shape to resolve
  * @return dimension that was resolved, -1 if shape had no negative element
  */
-dim_t resolve_shape(uint32_t nelem, dim_t ndim, dim_sz_t *shape) {
+dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape) {
     assert(ndim > 0);
     assert(shape != NULL);
 
@@ -163,7 +163,7 @@ dim_t resolve_shape(uint32_t nelem, dim_t ndim, dim_sz_t *shape) {
         }
     }
 
-    if (dim > 0) shape[dim] = nelem / mul;
+    if (dim > 0) shape[dim] = numel / mul;
 
     return dim;
 }
@@ -184,6 +184,43 @@ dim_t resolve_dim(dim_t ndim, dim_t dim) {
 
 // **** code below does not work/untested with strides
 
+// TODO: explain how this works in comments
+bool resolve_view(dim_t old_ndim, dim_sz_t *old_shape, stride_t *old_stride, dim_t new_ndim, dim_sz_t *new_shape, stride_t *new_stride) {
+    dim_t i = old_ndim - 1, j = new_ndim - 1;
+
+    while (j >= 0) {
+        if (new_shape[j] == 1) {
+            // stride can be anything -> set to 1 for safety
+            new_stride[j] = 1;
+            j--;
+            continue;
+        }
+
+        // we need to match the current new dimension
+        dim_sz_t needed = new_shape[j];
+        if (i < 0) return false; // no more old dims left
+
+        dim_sz_t acc = old_shape[i], stride = old_stride[i];
+        i--;
+
+        // try to consume old dims until sized match
+        while (acc < needed && i >= 0) {
+            // check for contiguity (are dims [i] and [i+1] adjacent)
+            if (old_stride[i] != old_shape[i] * old_stride[i+1]) return false;
+            acc *= old_shape[i];
+            stride = old_stride[i]; // update stride base
+            i--;
+        }
+
+        if (acc != needed) return false;
+
+        new_stride[j] = stride;
+        j--;
+    }
+
+    return true;
+}
+
 /**
  * Change the shape of a tensor
  * 
@@ -195,21 +232,32 @@ dim_t resolve_dim(dim_t ndim, dim_t dim) {
 tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
     assert(t != NULL);
 
-    uint32_t nelem = ndim > 0 ? 1 : 0;
-    for (dim_t i = 0; i < ndim; i++) nelem *= shape[i];
-    assert(t->nelem == nelem);
+    resolve_shape(t->numel, ndim, shape);
+    uint32_t numel = ndim > 0 ? 1 : 0;
+    for (dim_t i = 0; i < ndim; i++) numel *= shape[i];
+    assert(t->numel == numel);
 
-    t->shape = realloc(t->shape, ndim * sizeof(*t->shape));
-    assert(t->shape != NULL);
-    memcpy(t->shape, shape, ndim * sizeof(*shape));
-
-    // TODO: reshape has to take into account the current strides, not just calculate them again
-    t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
-    assert(t->stride != NULL);
-    t->stride[ndim-1] = 1;
-    for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * t->shape[i+1];
+    if (is_contiguous(t)) {
+        t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
+        assert(t->stride != NULL);
+        t->stride[ndim-1] = 1;
+        for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * shape[i+1];
+    } else {
+        stride_t *stride = malloc(ndim * sizeof(*stride));
+        assert(t->stride != NULL);
+        if (!resolve_view(t->ndim, t->shape, t->stride, ndim, shape, stride)) {
+            contiguous(t);
+            stride[ndim-1] = 1;
+            for (dim_t i = ndim-2; i >= 0; i--) stride[i] = stride[i+1] * shape[i+1];
+        }
+        free(t->stride);
+        t->stride = stride;
+    }
 
     t->ndim = ndim;
+    t->shape = realloc(t->shape, t->ndim * sizeof(*t->shape));
+    assert(t->shape != NULL);
+    memcpy(t->shape, shape, ndim * sizeof(*shape));
 
     return t;
 }
@@ -312,10 +360,10 @@ tensor_t *min(tensor_t *t) {
     assert(t != NULL);
     assert(t->shape != NULL);
     assert(t->data != NULL);
-    assert(t->nelem >= 1);
+    assert(t->numel >= 1);
     tensor_t *r = tensor_alloc(1, (dim_sz_t[]){1});
     float m = t->data[0];
-    for (uint32_t i = 1; i < t->nelem; i++) if (t->data[i] < m) m = t->data[i];
+    for (uint32_t i = 1; i < t->numel; i++) if (t->data[i] < m) m = t->data[i];
     *r->data = m;
     return r;
 }
@@ -330,10 +378,10 @@ tensor_t *max(tensor_t *t) {
     assert(t != NULL);
     assert(t->shape != NULL);
     assert(t->data != NULL);
-    assert(t->nelem >= 1);
+    assert(t->numel >= 1);
     tensor_t *r = tensor_alloc(1, (dim_sz_t[]){1});
     float m = t->data[0];
-    for (uint32_t i = 1; i < t->nelem; i++) if (t->data[i] > m) m = t->data[i];
+    for (uint32_t i = 1; i < t->numel; i++) if (t->data[i] > m) m = t->data[i];
     *r->data = m;
     return r;
 }
@@ -350,7 +398,7 @@ tensor_t *sumall(tensor_t *t) {
     assert(t->data != NULL);
     tensor_t *r = tensor_alloc(1, (dim_sz_t[]){1});
     float acc = 0;
-    for (uint32_t i = 0; i < t->nelem; i++) acc += t->data[i];
+    for (uint32_t i = 0; i < t->numel; i++) acc += t->data[i];
     *r->data = acc;
     return r;
 }
@@ -423,9 +471,9 @@ static tensor_t *ewop(tensor_t *a, tensor_t *b, tensor_op_t op) {
     free(bshape);
     free(cshape);
 
-    for (uint32_t cidx = 0; cidx < c->nelem; cidx++) {
-        float aval = a->data[cidx % a->nelem];
-        float bval = b->data[cidx % b->nelem];
+    for (uint32_t cidx = 0; cidx < c->numel; cidx++) {
+        float aval = a->data[cidx % a->numel];
+        float bval = b->data[cidx % b->numel];
         switch (op) {
             case OP_ADD: {
                 c->data[cidx] = aval + bval;
@@ -479,7 +527,7 @@ void tfprint(FILE *stream, tensor_t *t) {
     tensor_free(maxt);
     uint8_t ndigits = int_digits(maxel);
     bool decimals = false;
-    for (uint32_t i = 0; i < t->nelem && !decimals; i++) decimals = has_decimals(t->data[i]);
+    for (uint32_t i = 0; i < t->numel && !decimals; i++) decimals = has_decimals(t->data[i]);
     char *fmt = "%*g";
     if (decimals) {
         fmt = "%*.4f";
@@ -491,7 +539,7 @@ void tfprint(FILE *stream, tensor_t *t) {
 
     dim_t nnln = 0; // number of new lines to print closing
     uint32_t idx = 0; // index of current element in t->data
-    for (uint32_t i = 0; i < t->nelem; i++) {
+    for (uint32_t i = 0; i < t->numel; i++) {
         if (nnln > 0) {
             for (dim_t j = 0; j < nnln; j++) fprintf(stream, "\n");
             nnln = 0;
