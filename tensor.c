@@ -429,42 +429,6 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
-static bool tfprint_data(FILE *stream, const char *fmt, uint8_t ndigits, tensor_t *t, dim_t dim, dim_sz_t *indeces, dim_sz_t *mul) {
-    if (dim == t->ndim-1) {
-        // calculate current position in the printed tensor: [0, t->nelem]
-        uint32_t pos = 0;
-        for (dim_t d = 0; d < dim; d++) pos += indeces[d] * mul[d];
-        // if current pos is a multiple of dim size -> beginning of array
-        for (dim_t d = 0; d < dim; d++) fprintf(stream, pos % (t->shape[d] * mul[d]) == 0 ? "[" : " ");
-
-        // calculate current offset in t->data and print next row
-        uint32_t off = 0;
-        for (dim_t d = 0; d < dim; d++) off += indeces[d] * t->stride[d];
-        fprintf(stream, "[");
-        for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
-            fprintf(stream, fmt, ndigits, t->data[off + i * t->stride[dim]]);
-            if (i < t->shape[dim]-1) printf(" ");
-        }
-        fprintf(stream, "]");
-
-        pos += t->shape[dim]; // move pos to the end of what has just been printed
-        // if current pos is a multiple of dim size -> end of array
-        for (dim_t d = 0; d < dim; d++) if (pos % (t->shape[d] * mul[d]) == 0) printf("]");
-        return pos == t->nelem; // let the caller know whether all the elements have been printed
-    }
-
-    bool end = false; // finished printing all elements?
-    for (dim_sz_t i = 0; i < t->shape[dim]; i++) {
-        indeces[dim] = i;
-        if (tfprint_data(stream, fmt, ndigits, t, dim+1, indeces, mul)) end = true;
-        if (!end) fprintf(stream, "\n");
-    }
-    if (end && dim == 0) fprintf(stream, "\n");
-    indeces[dim] = 0;
-
-    return end;
-}
-
 void tfprint(FILE *stream, tensor_t *t) {
     assert(t != NULL);
     assert(t->shape != NULL);
@@ -485,18 +449,41 @@ void tfprint(FILE *stream, tensor_t *t) {
         ndigits += 5;
     }
 
-    dim_sz_t *indeces = malloc(t->ndim * sizeof(*indeces));
-    assert(indeces != NULL);
-    memset(indeces, 0, t->ndim * sizeof(*indeces));
+    dim_t *index = malloc(t->ndim * sizeof(*index));
+    assert(index != NULL);
 
-    dim_sz_t *mul = malloc(t->ndim * sizeof(*mul));
-    assert(mul != NULL);
-    mul[t->ndim-1] = 1;
-    for (dim_t i = t->ndim-2; i >= 0; i--) mul[i] = mul[i+1] * t->shape[i+1];
+    dim_t nnln = 0; // number of new lines to print closing
+    uint32_t idx = 0; // index of current element in t->data
+    for (uint32_t i = 0; i < t->nelem; i++) {
+        if (nnln > 0) {
+            for (dim_t j = 0; j < nnln; j++) fprintf(stream, "\n");
+            nnln = 0;
+        }
 
-    tfprint_data(stream, fmt, ndigits, t, 0, indeces, mul);
-    free(indeces);
-    free(mul);
+        // print necessary opening [; only performed when finished printing each row (every t->shape[t->ndim-1] elements)
+        if (index[t->ndim-1] == 0) {
+            dim_t nopen = 0; // number of opening [ to print
+            for (dim_t d = t->ndim-1; d >= 0 && index[d] == 0; d--) nopen++;
+            for (dim_t d = 0; d < t->ndim-nopen; d++) fprintf(stream, " ");
+            for (dim_t d = t->ndim-nopen; d < t->ndim; d++) fprintf(stream, "[");
+        }
+
+        fprintf(stream, fmt, ndigits, t->data[idx]);
+        if (index[t->ndim-1] < t->shape[t->ndim-1]-1) fprintf(stream, " ");
+
+        for (dim_t d = t->ndim-1; d >= 0; d--) {
+            index[d]++;
+            idx += t->stride[d];
+            if (index[d] < t->shape[d]) break;
+            index[d] = 0;
+            idx -= t->stride[d] * t->shape[d];
+            fprintf(stream, "]");
+            nnln++; // for each dimension, a new line should be printed, but only after all closing ]
+        }
+    }
+    printf("\n");
+
+    free(index);
 }
 
 void tprint(tensor_t *t) {

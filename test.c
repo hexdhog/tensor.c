@@ -179,41 +179,42 @@ const char *(*fnx[])(void) = {
 };
 
 int main(int argc, char **argv) {
-    for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
-    // tensor_t *t = tensor_alloc(3, (dim_sz_t[]){2, 3, 4});
-    // for (uint32_t i = 0; i < t->nelem; i++) t->data[i] = i + 1;
+    // for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
 
-    // printf("t.shape = ");
-    // tprint_tuple(t->ndim, t->shape);
-    // printf("\n");
-    // printf("t.stride = ");
-    // tprint_tuple(t->ndim, t->stride);
-    // printf("\n");
-    // printf("t.data = \n");
-    // tprint(t);
+    tensor_t *t = tensor_alloc(3, (dim_sz_t[]){2, 3, 4});
+    for (uint32_t i = 0; i < t->nelem; i++) t->data[i] = i + 1;
 
-    // printf("\ntranspose(t)\n\n");
-    // transpose(t, -1, -2);
+    printf("t.shape = ");
+    tprint_shape(t->ndim, t->shape);
+    printf("\n");
+    printf("t.stride = ");
+    tprint_stride(t->ndim, t->stride);
+    printf("\n");
+    printf("t.data = \n");
+    tprint(t);
 
-    // printf("t.shape = ");
-    // tprint_tuple(t->ndim, t->shape);
-    // printf("\n");
-    // printf("t.stride = ");
-    // tprint_tuple(t->ndim, t->stride);
-    // printf("\n");
-    // printf("t.data = \n");
-    // tprint(t);
+    printf("\ntranspose(t)\n\n");
+    transpose(t, -1, -2);
 
-    // printf("\n");
-    // reshape(t, 6, (dim_sz_t[]){2, 1, 2, 2, 3, 1});
-    // printf("t.shape = ");
-    // tprint_tuple(t->ndim, t->shape);
-    // printf("\n");
-    // printf("t.stride = ");
-    // tprint_tuple(t->ndim, t->stride);
-    // printf("\n");
-    // printf("t.data = \n");
-    // tprint(t);
+    printf("t.shape = ");
+    tprint_shape(t->ndim, t->shape);
+    printf("\n");
+    printf("t.stride = ");
+    tprint_stride(t->ndim, t->stride);
+    printf("\n");
+    printf("t.data = \n");
+    tprint(t);
+
+    printf("\n");
+    reshape(t, 6, (dim_sz_t[]){2, 1, 2, 2, 3, 1});
+    printf("t.shape = ");
+    tprint_shape(t->ndim, t->shape);
+    printf("\n");
+    printf("t.stride = ");
+    tprint_stride(t->ndim, t->stride);
+    printf("\n");
+    printf("t.data = \n");
+    tprint(t);
 
     return 0;
 }
