@@ -16,6 +16,10 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
     assert(ndim > 0); // TODO: should tensors be allowed to have 0 dimensions (for single values)?
     assert(shape != NULL);
 
+    // shapes can contain negative numbers (for API pruposes; e.g. reshape(t, 3, -1, 2))
+    // because 0 or negative dimension sized does not make sense here we must check for there aren't any
+    for (dim_t i = 0; i < ndim; i++) assert(shape[i] > 0);
+
     tensor_t *t = malloc(sizeof(tensor_t));
     assert(t != NULL);
 
@@ -62,6 +66,86 @@ void tensor_free(tensor_t *t) {
 }
 
 /**
+ * Transposes specified dimensions (interchanges shape and strides based on the specified dimensions; does not perform any copy)
+ * 
+ * @param t tensor to transpose
+ * @param dim1 first dimension to transpose
+ * @param dim2 second dimension to transpose
+ * @return transposed tensor
+ */
+tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
+    assert(t != NULL);
+    dim1 = RESOLVE_DIM(dim1, t->ndim);
+    assert(dim1 < t->ndim);
+    dim2 = RESOLVE_DIM(dim2, t->ndim);
+    assert(dim2 < t->ndim);
+    if (dim1 == dim2) return t; // if both dims are the same there's nothing to do
+    // swap both shape and stride for the specified dimensions
+    SWAP(t->shape[dim1], t->shape[dim2]);
+    SWAP(t->stride[dim1], t->stride[dim2]);
+    return t;
+}
+
+/**
+ * Checks if tensor is contiguous
+ * 
+ * @param t tensor to check if contiguous
+ * @return true if contiguous, false otherwise
+ */
+bool is_contiguous(tensor_t *t) {
+    assert(t != NULL);
+    assert(t->shape != NULL);
+    assert(t->stride != NULL);
+    dim_sz_t mul = 1;
+    for (dim_t i = t->ndim-1; i >= 0; i--) {
+        if (t->stride[i] != mul) return false;
+        mul *= t->shape[i];
+    }
+    return true;
+}
+
+/**
+ * Converts the tensor into a contiguous tensor (creates a new data buffer and copies data).
+ * 
+ * @param t tensor to convert to contiguous
+ * @return contiguous tensor
+ */
+tensor_t *contiguous(tensor_t *t) {
+    assert(t != NULL);
+    assert(t->shape != NULL);
+    assert(t->stride != NULL);
+    if (is_contiguous(t)) return t;
+
+    dim_sz_t *index = malloc(t->ndim * sizeof(*index));
+    assert(index != NULL);
+
+    float *data = malloc(t->nelem * sizeof(*data));
+    assert(data != NULL);
+
+    size_t idx = 0;
+    for (uint32_t i = 0; i < t->nelem; i++) {
+        data[i] = t->data[idx];
+        for (dim_t d = t->ndim-1; d >= 0; d--) {
+            index[d]++;
+            idx += t->stride[d];
+            if (index[d] < t->shape[d]) break;
+            index[d] = 0;
+            idx -= t->stride[d] * t->shape[d];
+        }
+    }
+
+    free(index);
+    free(t->data);
+    t->data = data;
+    t->stride[t->ndim-1] = 1;
+    for (dim_t d = t->ndim-2; d >= 0; d--) t->stride[d] = t->shape[d+1] * t->stride[d+1];
+
+    return t;
+}
+
+// **** code below does not work/untested with strides
+
+/**
  * Broadcasts tensor a with tensor b and stores the new shapes into ashape and bshape respectively,
  * following NumPy's broadcast rules: https://numpy.org/doc/stable/user/basics.broadcasting.html#general-broadcasting-rules
  * 
@@ -106,6 +190,36 @@ uint8_t broadcast(tensor_t *a, dim_sz_t **ashape, tensor_t *b, dim_sz_t **bshape
 }
 
 /**
+ * Change the shape of a tensor
+ * 
+ * @param t tensor to change the shape of
+ * @param ndim number of dimensions of the new shape
+ * @param shape new shape
+ * @return pointer to the reshaped tensor
+ */
+tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
+    assert(t != NULL);
+
+    uint32_t nelem = ndim > 0 ? 1 : 0;
+    for (dim_t i = 0; i < ndim; i++) nelem *= shape[i];
+    assert(t->nelem == nelem);
+
+    t->shape = realloc(t->shape, ndim * sizeof(*t->shape));
+    assert(t->shape != NULL);
+    memcpy(t->shape, shape, ndim * sizeof(*shape));
+
+    // TODO: reshape has to take into account the current strides, not just calculate them again
+    t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
+    assert(t->stride != NULL);
+    t->stride[ndim-1] = 1;
+    for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * t->shape[i+1];
+
+    t->ndim = ndim;
+
+    return t;
+}
+
+/**
  * Removes the specified dimension of size 1
  * 
  * @param t tensor to remove the dimension of size 1
@@ -144,46 +258,6 @@ tensor_t *unsqueeze(tensor_t *t, dim_t dim) {
     t->ndim = ndim;
     free(t->shape);
     t->shape = shape;
-    return t;
-}
-
-tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
-    dim1 = RESOLVE_DIM(dim1, t->ndim);
-    assert(dim1 < t->ndim);
-    dim2 = RESOLVE_DIM(dim2, t->ndim);
-    assert(dim2 < t->ndim);
-    if (dim1 == dim2) return t;
-    SWAP(t->shape[dim1], t->shape[dim2]);
-    SWAP(t->stride[dim1], t->stride[dim2]);
-    return t;
-}
-
-/**
- * Change the shape of a tensor
- * 
- * @param t tensor to change the shape of
- * @param ndim number of dimensions of the new shape
- * @param shape new shape
- * @return pointer to the reshaped tensor
- */
-tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
-    assert(t != NULL);
-
-    uint32_t nelem = ndim > 0 ? 1 : 0;
-    for (dim_t i = 0; i < ndim; i++) nelem *= shape[i];
-    assert(t->nelem == nelem);
-
-    t->shape = realloc(t->shape, ndim * sizeof(*t->shape));
-    assert(t->shape != NULL);
-    memcpy(t->shape, shape, ndim * sizeof(*shape));
-
-    t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
-    assert(t->stride != NULL);
-    t->stride[ndim-1] = 1;
-    for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * t->shape[i+1];
-
-    t->ndim = ndim;
-
     return t;
 }
 
@@ -355,7 +429,7 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
-static bool tfprint_data(FILE *stream, const char *fmt, uint8_t ndigits, tensor_t *t, dim_t dim, dim_sz_t *indeces, uint32_t *mul) {
+static bool tfprint_data(FILE *stream, const char *fmt, uint8_t ndigits, tensor_t *t, dim_t dim, dim_sz_t *indeces, dim_sz_t *mul) {
     if (dim == t->ndim-1) {
         // calculate current position in the printed tensor: [0, t->nelem]
         uint32_t pos = 0;
@@ -398,6 +472,7 @@ void tfprint(FILE *stream, tensor_t *t) {
     assert(t->stride != NULL);
     assert(t->data != NULL);
 
+    // find out how many digits we need to print each element
     tensor_t *maxt = max(t);
     float maxel = *maxt->data;
     tensor_free(maxt);
@@ -428,16 +503,30 @@ void tprint(tensor_t *t) {
     tfprint(stdout, t);
 }
 
-void tfprint_tuple(FILE *stream, uint32_t n, uint32_t *tuple) {
-    if (tuple == NULL) return;
+void tprint_shape(uint32_t n, dim_sz_t *shape) {
+    tfprint_shape(stdout, n, shape);
+}
+
+void tfprint_shape(FILE *stream, uint32_t n, dim_sz_t *shape) {
+    if (shape == NULL) return;
     fprintf(stream, "(");
     for (uint8_t i = 0; i < n; i++) {
-        fprintf(stream, "%d", tuple[i]);
+        fprintf(stream, "%d", shape[i]);
         if (i < n - 1) fprintf(stream, ", ");
     }
     fprintf(stream, ")");
 }
 
-void tprint_tuple(uint32_t n, uint32_t *tuple) {
-    tfprint_tuple(stdout, n, tuple);
+void tprint_stride(uint32_t n, stride_t *stride) {
+    tfprint_stride(stdout, n, stride);
+}
+
+void tfprint_stride(FILE *stream, uint32_t n, stride_t *stride) {
+    if (stride == NULL) return;
+    fprintf(stream, "(");
+    for (uint8_t i = 0; i < n; i++) {
+        fprintf(stream, "%u", stride[i]);
+        if (i < n - 1) fprintf(stream, ", ");
+    }
+    fprintf(stream, ")");
 }

@@ -23,6 +23,38 @@
     } \
 } while (0)
 
+/********************* TRANSPOSE *********************/
+
+const char *test_transpose() {
+    tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
+    for (int i = 0; i < 6; i++) t->data[i] = i + 1; // [1,2,3,4,5,6]
+    assert(memcmp(t->shape, (dim_sz_t[]){2, 3}, t->ndim * sizeof(*t->shape)) == 0);
+    assert(memcmp(t->stride, (dim_sz_t[]){3, 1}, t->ndim * sizeof(*t->stride)) == 0);
+    transpose(t, 0, 1);
+    assert(memcmp(t->shape, (dim_sz_t[]){3, 2}, t->ndim * sizeof(*t->shape)) == 0);
+    assert(memcmp(t->stride, (dim_sz_t[]){1, 3}, t->ndim * sizeof(*t->stride)) == 0);
+
+    return __func__;
+}
+
+/********************* CONTIGUOUS *********************/
+
+const char *test_is_contiguous() {
+    tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
+    for (int i = 0; i < 6; i++) t->data[i] = i + 1; // [1,2,3,4,5,6]
+    assert(is_contiguous(t));
+    transpose(t, 0, 1);
+    assert(!is_contiguous(t));
+    contiguous(t);
+    assert(is_contiguous(t));
+    assert(memcmp(t->stride, (stride_t[]){2, 1}, t->ndim * sizeof(*t->stride)) == 0);
+    assert(memcmp(t->data, (float[]){1, 4, 2, 5, 3, 6}, t->nelem * sizeof(*t->data)) == 0);
+
+    return __func__;
+}
+
+/********************* SUM *********************/
+
 const char *test_sumall() {
     tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
     for (int i = 0; i < 6; i++) t->data[i] = i + 1; // [1,2,3,4,5,6]
@@ -141,45 +173,47 @@ const char *test_sum_dim4() {
 }
 
 const char *(*fnx[])(void) = {
-    test_sumall, test_sum_dim0, test_sum_dim1_keepdim, test_sum_negative_dim, test_sum_dim_out_of_range, test_sum_dim4
+    test_transpose,
+    test_is_contiguous
+    // test_sumall, test_sum_dim0, test_sum_dim1_keepdim, test_sum_negative_dim, test_sum_dim_out_of_range, test_sum_dim4,
 };
 
 int main(int argc, char **argv) {
-    // for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
-    tensor_t *t = tensor_alloc(3, (dim_sz_t[]){2, 3, 4});
-    for (uint32_t i = 0; i < t->nelem; i++) t->data[i] = i + 1;
+    for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
+    // tensor_t *t = tensor_alloc(3, (dim_sz_t[]){2, 3, 4});
+    // for (uint32_t i = 0; i < t->nelem; i++) t->data[i] = i + 1;
 
-    printf("t.shape = ");
-    tprint_tuple(t->ndim, t->shape);
-    printf("\n");
-    printf("t.stride = ");
-    tprint_tuple(t->ndim, t->stride);
-    printf("\n");
-    printf("t.data = \n");
-    tprint(t);
+    // printf("t.shape = ");
+    // tprint_tuple(t->ndim, t->shape);
+    // printf("\n");
+    // printf("t.stride = ");
+    // tprint_tuple(t->ndim, t->stride);
+    // printf("\n");
+    // printf("t.data = \n");
+    // tprint(t);
 
-    printf("\ntranspose(t)\n\n");
-    transpose(t, -1, -2);
+    // printf("\ntranspose(t)\n\n");
+    // transpose(t, -1, -2);
 
-    printf("t.shape = ");
-    tprint_tuple(t->ndim, t->shape);
-    printf("\n");
-    printf("t.stride = ");
-    tprint_tuple(t->ndim, t->stride);
-    printf("\n");
-    printf("t.data = \n");
-    tprint(t);
+    // printf("t.shape = ");
+    // tprint_tuple(t->ndim, t->shape);
+    // printf("\n");
+    // printf("t.stride = ");
+    // tprint_tuple(t->ndim, t->stride);
+    // printf("\n");
+    // printf("t.data = \n");
+    // tprint(t);
 
-    printf("\n");
-    reshape(t, 6, (dim_sz_t[]){2, 1, 2, 2, 3, 1});
-    printf("t.shape = ");
-    tprint_tuple(t->ndim, t->shape);
-    printf("\n");
-    printf("t.stride = ");
-    tprint_tuple(t->ndim, t->stride);
-    printf("\n");
-    printf("t.data = \n");
-    tprint(t);
+    // printf("\n");
+    // reshape(t, 6, (dim_sz_t[]){2, 1, 2, 2, 3, 1});
+    // printf("t.shape = ");
+    // tprint_tuple(t->ndim, t->shape);
+    // printf("\n");
+    // printf("t.stride = ");
+    // tprint_tuple(t->ndim, t->stride);
+    // printf("\n");
+    // printf("t.data = \n");
+    // tprint(t);
 
     return 0;
 }
