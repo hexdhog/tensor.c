@@ -2,7 +2,6 @@
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define RESOLVE_DIM(dim, ndim) ((dim_t)((dim) >= 0 ? (dim) : (dim) + (ndim)))
 #define SWAP(a, b) do { typeof(a) tmp = (a); (a) = (b); (b) = tmp; } while (0)
 
 /**
@@ -75,10 +74,8 @@ void tensor_free(tensor_t *t) {
  */
 tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
     assert(t != NULL);
-    dim1 = RESOLVE_DIM(dim1, t->ndim);
-    assert(dim1 < t->ndim);
-    dim2 = RESOLVE_DIM(dim2, t->ndim);
-    assert(dim2 < t->ndim);
+    dim1 = resolve_dim(t->ndim, dim1);
+    dim2 = resolve_dim(t->ndim, dim2);
     if (dim1 == dim2) return t; // if both dims are the same there's nothing to do
     // swap both shape and stride for the specified dimensions
     SWAP(t->shape[dim1], t->shape[dim2]);
@@ -143,7 +140,79 @@ tensor_t *contiguous(tensor_t *t) {
     return t;
 }
 
+/**
+ * Resolves shapes with an element with a negative element.
+ * 
+ * @param nelem number of total elements in tensor
+ * @param ndim number of dimensions in shape
+ * @param shape shape to resolve
+ * @return dimension that was resolved, -1 if shape had no negative element
+ */
+dim_t resolve_shape(uint32_t nelem, dim_t ndim, dim_sz_t *shape) {
+    assert(ndim > 0);
+    assert(shape != NULL);
+
+    dim_t dim = -1;
+    uint32_t mul = 1;
+    for (dim_t d = 0; d < ndim; d++) {
+        if (shape[d] < 0) {
+            assert(dim < 0);
+            dim = d;
+        } else {
+            mul *= shape[d];
+        }
+    }
+
+    if (dim > 0) shape[dim] = nelem / mul;
+
+    return dim;
+}
+
+/**
+ * Resolves the dimension with possible negative elements.
+ * Also asserts that resulting dim is within [0, ndim-1]
+ * 
+ * @param ndim number of dimensions
+ * @param dim dimension to resolve
+ * @return resolved dimension
+ */
+dim_t resolve_dim(dim_t ndim, dim_t dim) {
+    dim = dim >= 0 ? dim : dim + ndim;
+    assert(dim < ndim);
+    return dim;
+}
+
 // **** code below does not work/untested with strides
+
+/**
+ * Change the shape of a tensor
+ * 
+ * @param t tensor to change the shape of
+ * @param ndim number of dimensions of the new shape
+ * @param shape new shape
+ * @return pointer to the reshaped tensor
+ */
+tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
+    assert(t != NULL);
+
+    uint32_t nelem = ndim > 0 ? 1 : 0;
+    for (dim_t i = 0; i < ndim; i++) nelem *= shape[i];
+    assert(t->nelem == nelem);
+
+    t->shape = realloc(t->shape, ndim * sizeof(*t->shape));
+    assert(t->shape != NULL);
+    memcpy(t->shape, shape, ndim * sizeof(*shape));
+
+    // TODO: reshape has to take into account the current strides, not just calculate them again
+    t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
+    assert(t->stride != NULL);
+    t->stride[ndim-1] = 1;
+    for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * t->shape[i+1];
+
+    t->ndim = ndim;
+
+    return t;
+}
 
 /**
  * Broadcasts tensor a with tensor b and stores the new shapes into ashape and bshape respectively,
@@ -190,36 +259,6 @@ uint8_t broadcast(tensor_t *a, dim_sz_t **ashape, tensor_t *b, dim_sz_t **bshape
 }
 
 /**
- * Change the shape of a tensor
- * 
- * @param t tensor to change the shape of
- * @param ndim number of dimensions of the new shape
- * @param shape new shape
- * @return pointer to the reshaped tensor
- */
-tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
-    assert(t != NULL);
-
-    uint32_t nelem = ndim > 0 ? 1 : 0;
-    for (dim_t i = 0; i < ndim; i++) nelem *= shape[i];
-    assert(t->nelem == nelem);
-
-    t->shape = realloc(t->shape, ndim * sizeof(*t->shape));
-    assert(t->shape != NULL);
-    memcpy(t->shape, shape, ndim * sizeof(*shape));
-
-    // TODO: reshape has to take into account the current strides, not just calculate them again
-    t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
-    assert(t->stride != NULL);
-    t->stride[ndim-1] = 1;
-    for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * t->shape[i+1];
-
-    t->ndim = ndim;
-
-    return t;
-}
-
-/**
  * Removes the specified dimension of size 1
  * 
  * @param t tensor to remove the dimension of size 1
@@ -229,8 +268,8 @@ tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
 tensor_t *squeeze(tensor_t *t, dim_t dim) {
     assert(t != NULL);
     assert(t->shape != NULL);
-    dim_t d = RESOLVE_DIM(dim, t->ndim);
-    if (d >= t->ndim || t->ndim < 2) return t;
+    if (t->ndim <= 1) return t;
+    dim_t d = resolve_dim(t->ndim, dim);
     if (t->shape[d] != 1) return t;
     for (dim_t i = d; i < t->ndim-1; i++) t->shape[i] = t->shape[i+1];
     t->ndim--;
@@ -247,8 +286,7 @@ tensor_t *squeeze(tensor_t *t, dim_t dim) {
 tensor_t *unsqueeze(tensor_t *t, dim_t dim) {
     assert(t != NULL);
     assert(t->shape != NULL);
-    dim_t d = RESOLVE_DIM(dim, t->ndim);
-    if (d >= t->ndim) return t;
+    dim_t d = resolve_dim(t->ndim, dim);
     dim_t ndim = t->ndim + 1;
     dim_sz_t *shape = malloc(ndim * sizeof(*shape));
     assert(shape != NULL);
@@ -329,9 +367,8 @@ tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim) {
     assert(t != NULL);
     assert(t->shape != NULL);
     assert(t->data != NULL);
-    dim_t d = RESOLVE_DIM(dim, t->ndim);
-    assert(d < t->ndim);
 
+    dim_t d = resolve_dim(t->ndim, dim);
     dim_sz_t *shape = malloc(t->ndim * sizeof(*shape));
     assert(shape != NULL);
     memcpy(shape, t->shape, t->ndim * sizeof(*shape));

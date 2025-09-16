@@ -31,6 +31,9 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape);
 void tensor_free(tensor_t *t);
 bool is_contiguous(tensor_t *t);
 tensor_t *contiguous(tensor_t *t);
+dim_t resolve_shape(uint32_t nelem, dim_t ndim, dim_sz_t *shape);
+dim_t resolve_dim(dim_t ndim, dim_t dim);
+
 uint8_t broadcast(tensor_t *a, dim_sz_t **ashape, tensor_t *b, dim_sz_t **bshape);
 tensor_t *squeeze(tensor_t *t, dim_t dim);
 tensor_t *unsqueeze(tensor_t *t, dim_t dim);
