@@ -31,10 +31,10 @@ uint8_t dbg_start(int8_t lvl, const char *name) {
     uint8_t id = 0;
     if (dbglvl() >= lvl) {
         id = _dbg_last++;
-        if (id > 0 && _dbg_mod[id-1] == 1) printf("s\n");
+        if (id > 0 && _dbg_mod[id-1] == 1) printf("\n");
         printf("%*s", id * DBG_ALIGN, ""); \
         printf(YEL "%s" RST " ", name);
-        for (uint8_t i = 0; i <= id; i++) _dbg_mod[i] = 1;
+        _dbg_mod[id] = 1;
     }
     return id;
 }
@@ -42,11 +42,8 @@ uint8_t dbg_start(int8_t lvl, const char *name) {
 void dbg_end(uint8_t id, int8_t lvl) {
     if (_dbg_last == 0) return;
     if (dbglvl() >= lvl) {
-        if (_dbg_mod[id] == 1) printf("e\n");
+        if (_dbg_mod[id] == 1) printf("\n");
         for (uint8_t i = 0; i <= id; i++) _dbg_mod[i] = 0;
-        printf("%d[", id);
-        for (uint8_t i = 0; i <= 5; i++) printf("%d%s", _dbg_mod[i], i < 5 ? " " : "");
-        printf("]");
         _dbg_last--;
     }
 }

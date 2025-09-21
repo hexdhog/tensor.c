@@ -146,16 +146,17 @@ bool is_contiguous(tensor_t *t) {
 tensor_t *contiguous(tensor_t *t) {
     uint8_t id = dbg_start(1, __func__);
     assert(t != NULL);
-    dbg(id, 1, { printf("t=%p ", t); });
+    dbg(id, 1, { tprint_internal(t); printf("\n"); });
     assert(t->shape != NULL);
     assert(t->stride != NULL);
     if (!is_contiguous(t)) {
         dim_sz_t *index = malloc(t->ndim * sizeof(*index));
         assert(index != NULL);
-    
+        memset(index, 0, t->ndim * sizeof(*index));
+
         float *data = malloc(t->numel * sizeof(*data));
         assert(data != NULL);
-    
+
         size_t idx = 0;
         for (uint32_t i = 0; i < t->numel; i++) {
             data[i] = t->data[idx];
@@ -289,6 +290,7 @@ bool resolve_view(dim_t old_ndim, dim_sz_t *old_shape, stride_t *old_stride, dim
 tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
     uint8_t id = dbg_start(1, __func__);
     assert(t != NULL);
+    dbg(id, 1, { tprint_internal(t); });
 
     resolve_shape(t->numel, ndim, shape);
     uint32_t numel = ndim > 0 ? 1 : 0;

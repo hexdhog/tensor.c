@@ -59,15 +59,6 @@ const char *test_is_contiguous() {
 
 /********************* RESHAPE *********************/
 
-void tinfo(tensor_t *t) {
-    printf("t.shape =\n");
-    tprint_shape(t->ndim, t->shape);
-    printf("t.stride =\n");
-    tprint_stride(t->ndim, t->stride);
-    tprint(t);
-    printf("\n");
-}
-
 const char *test_reshape() {
     // contiguous, computes strides directy
     // {
@@ -82,9 +73,7 @@ const char *test_reshape() {
     {
         tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
         for (uint32_t i = 0; i < t->numel; i++) t->data[i] = i + 1;
-        // tinfo(t);
         transpose(t, 0, 1);
-        // tinfo(t);
         // reshape(t, 3, (dim_sz_t[]){2, 1, 3});
         reshape(t, 1, (dim_sz_t[]){6});
         assert(t->ndim == 1);

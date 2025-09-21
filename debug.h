@@ -25,14 +25,15 @@ void dbg_end(uint8_t id, int8_t lvl);
     if (dbglvl() >= (int8_t)(lvl)) { \
         for (uint8_t i = 0; i <= id; i++) _dbg_mod[i] = 1; \
         if (_dbg_mod[id + 1] == 1) { \
-            printf("%d[", id); \
-            for (uint8_t i = 0; i <= 5; i++) printf("%d%s", _dbg_mod[i], i < 5 ? " " : ""); \
-            printf("]"); \
             printf("\n%*s", id * DBG_ALIGN, ""); \
             _dbg_mod[id + 1] = 0; \
         } \
         do { code } while (0); \
     } \
 }
+
+// printf("%d[", id);
+// for (uint8_t i = 0; i <= 5; i++) printf("%d%s", _dbg_mod[i], i < 5 ? " " : "");
+// printf("]");
 
 #endif

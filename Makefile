@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall
+CFLAGS = -Wall -fsanitize=address -g
 SRCS = tensor.c
 
 all: test
