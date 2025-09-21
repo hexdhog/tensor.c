@@ -13,4 +13,4 @@ clean:
 
 .PHONY: test
 test: build
-	${CC} ${CFLAGS} ${SRCS} test.c -o build/test && ./build/test
+	${CC} ${CFLAGS} ${SRCS} debug.c test.c -o build/test && ./build/test

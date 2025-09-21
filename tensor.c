@@ -1,8 +1,12 @@
 #include "tensor.h"
+#include "debug.h"
+#include "color.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define SWAP(a, b) do { typeof(a) tmp = (a); (a) = (b); (b) = tmp; } while (0)
+
+static void tprint_internal(tensor_t *t);
 
 /**
  * Creates a tensor and allocates the required memory for it
@@ -12,6 +16,7 @@
  * @return pointer to the created tensor
  */
 tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
+    uint8_t id = dbg_start(1, __func__);
     assert(ndim > 0); // TODO: should tensors be allowed to have 0 dimensions (for single values)?
     assert(shape != NULL);
 
@@ -38,6 +43,9 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
     t->data = malloc(t->numel * sizeof(*t->data));
     assert(t->data != NULL);
 
+    dbg(id, 1, { tprint_internal(t); });
+    dbg_end(id, 1);
+
     return t;
 }
 
@@ -48,20 +56,24 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
  * @param t tensor to free
  */
 void tensor_free(tensor_t *t) {
-    if (t == NULL) return;
-    if (t->shape != NULL) {
-        free(t->shape);
-        t->shape = NULL;
+    uint8_t id = dbg_start(1, __func__);
+    if (t != NULL) {
+        dbg(id, 1, { tprint_internal(t); });
+        if (t->shape != NULL) {
+            free(t->shape);
+            t->shape = NULL;
+        }
+        if (t->stride != NULL) {
+            free(t->stride);
+            t->stride = NULL;
+        }
+        if (t->data != NULL) {
+            free(t->data);
+            t->data = NULL;
+        }
+        free(t);
     }
-    if (t->stride != NULL) {
-        free(t->stride);
-        t->stride = NULL;
-    }
-    if (t->data != NULL) {
-        free(t->data);
-        t->data = NULL;
-    }
-    free(t);
+    dbg_end(id, 1);
 }
 
 /**
@@ -73,13 +85,28 @@ void tensor_free(tensor_t *t) {
  * @return transposed tensor
  */
 tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
+    uint8_t id = dbg_start(1, __func__);
     assert(t != NULL);
+    dbg(id, 1, {
+        printf("t=%p ", t);
+        printf("%d <-> %d : ", dim1, dim2);
+        tprint_shape(t->ndim, t->shape);
+        printf("-");
+        tprint_stride(t->ndim, t->stride);
+        printf(" -> ");
+    });
     dim1 = resolve_dim(t->ndim, dim1);
     dim2 = resolve_dim(t->ndim, dim2);
     if (dim1 == dim2) return t; // if both dims are the same there's nothing to do
     // swap both shape and stride for the specified dimensions
     SWAP(t->shape[dim1], t->shape[dim2]);
     SWAP(t->stride[dim1], t->stride[dim2]);
+    dbg(id, 1, {
+        tprint_shape(t->ndim, t->shape);
+        printf("-");
+        tprint_stride(t->ndim, t->stride);
+    });
+    dbg_end(id, 1);
     return t;
 }
 
@@ -90,15 +117,24 @@ tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
  * @return true if contiguous, false otherwise
  */
 bool is_contiguous(tensor_t *t) {
+    uint8_t id = dbg_start(2, __func__);
     assert(t != NULL);
     assert(t->shape != NULL);
-    assert(t->stride != NULL);
+    bool ret = true;
     dim_sz_t mul = 1;
-    for (dim_t i = t->ndim-1; i >= 0; i--) {
-        if (t->stride[i] != mul) return false;
-        mul *= t->shape[i];
+    for (dim_t i = t->ndim-1; i >= 0 && ret; i--) {
+        if (t->stride[i] != mul) ret = false;
+        else mul *= t->shape[i];
     }
-    return true;
+    dbg(id, 2, {
+        printf("t=%p ", t);
+        tprint_shape(t->ndim, t->shape);
+        printf("-");
+        tprint_stride(t->ndim, t->stride);
+        printf(" %s" RST, ret ? GRN "true" : RED "false");
+    });
+    dbg_end(id, 2);
+    return ret;
 }
 
 /**
@@ -108,34 +144,40 @@ bool is_contiguous(tensor_t *t) {
  * @return contiguous tensor
  */
 tensor_t *contiguous(tensor_t *t) {
+    uint8_t id = dbg_start(1, __func__);
     assert(t != NULL);
+    dbg(id, 1, { printf("t=%p ", t); });
     assert(t->shape != NULL);
     assert(t->stride != NULL);
-    if (is_contiguous(t)) return t;
-
-    dim_sz_t *index = malloc(t->ndim * sizeof(*index));
-    assert(index != NULL);
-
-    float *data = malloc(t->numel * sizeof(*data));
-    assert(data != NULL);
-
-    size_t idx = 0;
-    for (uint32_t i = 0; i < t->numel; i++) {
-        data[i] = t->data[idx];
-        for (dim_t d = t->ndim-1; d >= 0; d--) {
-            index[d]++;
-            idx += t->stride[d];
-            if (index[d] < t->shape[d]) break;
-            index[d] = 0;
-            idx -= t->stride[d] * t->shape[d];
+    if (!is_contiguous(t)) {
+        dim_sz_t *index = malloc(t->ndim * sizeof(*index));
+        assert(index != NULL);
+    
+        float *data = malloc(t->numel * sizeof(*data));
+        assert(data != NULL);
+    
+        size_t idx = 0;
+        for (uint32_t i = 0; i < t->numel; i++) {
+            data[i] = t->data[idx];
+            // increase the index for the last dimension and carry the overflow to the previous ones
+            for (dim_t d = t->ndim-1; d >= 0; d--) {
+                index[d]++;
+                idx += t->stride[d]; // increase idx by the current dimension's stride
+                if (index[d] < t->shape[d]) break;
+                index[d] = 0;
+                idx -= t->stride[d] * t->shape[d]; // rollback idx to the previous dimension's base
+            }
         }
+
+        free(index);
+        free(t->data);
+        t->data = data;
+        // recalculate strides and tensor is now contiguous
+        t->stride[t->ndim-1] = 1;
+        for (dim_t d = t->ndim-2; d >= 0; d--) t->stride[d] = t->shape[d+1] * t->stride[d+1];
     }
 
-    free(index);
-    free(t->data);
-    t->data = data;
-    t->stride[t->ndim-1] = 1;
-    for (dim_t d = t->ndim-2; d >= 0; d--) t->stride[d] = t->shape[d+1] * t->stride[d+1];
+    dbg_end(id, 1);
 
     return t;
 }
@@ -149,8 +191,14 @@ tensor_t *contiguous(tensor_t *t) {
  * @return dimension that was resolved, -1 if shape had no negative element
  */
 dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape) {
+    uint8_t id = dbg_start(3, __func__);
     assert(ndim > 0);
     assert(shape != NULL);
+
+    dbg(id, 3, {
+        tprint_shape(ndim, shape);
+        printf(" -> ");
+    });
 
     dim_t dim = -1;
     uint32_t mul = 1;
@@ -165,6 +213,11 @@ dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape) {
 
     if (dim > 0) shape[dim] = numel / mul;
 
+    dbg(id, 3, {
+        tprint_shape(ndim, shape);
+    });
+    dbg_end(id, 3);
+
     return dim;
 }
 
@@ -177,8 +230,12 @@ dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape) {
  * @return resolved dimension
  */
 dim_t resolve_dim(dim_t ndim, dim_t dim) {
+    uint8_t id = dbg_start(3, __func__);
+    dbg(id, 3, { printf("ndim=%d dim=%d -> ", ndim, dim); });
     dim = dim >= 0 ? dim : dim + ndim;
     assert(dim < ndim);
+    dbg(id, 3, { printf("dim=%d", dim); });
+    dbg_end(id, 3);
     return dim;
 }
 
@@ -197,22 +254,22 @@ bool resolve_view(dim_t old_ndim, dim_sz_t *old_shape, stride_t *old_stride, dim
         }
 
         // we need to match the current new dimension
-        dim_sz_t needed = new_shape[j];
+        dim_sz_t shape_target = new_shape[j];
         if (i < 0) return false; // no more old dims left
 
-        dim_sz_t acc = old_shape[i], stride = old_stride[i];
+        dim_sz_t shape = old_shape[i], stride = old_stride[i];
         i--;
 
-        // try to consume old dims until sized match
-        while (acc < needed && i >= 0) {
-            // check for contiguity (are dims [i] and [i+1] adjacent)
+        // try to consume old dims until shape sizes match for current new dimension
+        while (shape < shape_target && i >= 0) {
+            // check for contiguity (are dims [i] and [i+1] adjacent); not contiguous would need a copy
             if (old_stride[i] != old_shape[i] * old_stride[i+1]) return false;
-            acc *= old_shape[i];
+            shape *= old_shape[i];
             stride = old_stride[i]; // update stride base
             i--;
         }
 
-        if (acc != needed) return false;
+        if (shape != shape_target) return false;
 
         new_stride[j] = stride;
         j--;
@@ -230,6 +287,7 @@ bool resolve_view(dim_t old_ndim, dim_sz_t *old_shape, stride_t *old_stride, dim
  * @return pointer to the reshaped tensor
  */
 tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
+    uint8_t id = dbg_start(1, __func__);
     assert(t != NULL);
 
     resolve_shape(t->numel, ndim, shape);
@@ -259,6 +317,7 @@ tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
     assert(t->shape != NULL);
     memcpy(t->shape, shape, ndim * sizeof(*shape));
 
+    dbg_end(id, 1);
     return t;
 }
 
@@ -514,6 +573,17 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
+static void tprint_internal(tensor_t *t) {
+    printf("t=%p", t);
+    printf(" shape=");
+    tprint_shape(t->ndim, t->shape);
+    printf(" stride=");
+    tprint_stride(t->ndim, t->stride);
+    printf(" numel=%u", t->numel);
+    uint64_t sz = sizeof(tensor_t) + t->ndim * (sizeof(*t->shape) + sizeof(*t->stride)) + t->numel * sizeof(*t->data);
+    printf(" size=%lluB", sz);
+}
+
 void tfprint(FILE *stream, tensor_t *t) {
     assert(t != NULL);
     assert(t->shape != NULL);
@@ -580,7 +650,7 @@ void tprint_shape(uint32_t n, dim_sz_t *shape) {
 }
 
 void tfprint_shape(FILE *stream, uint32_t n, dim_sz_t *shape) {
-    if (shape == NULL) return;
+    if (shape == NULL) n = 0;
     fprintf(stream, "(");
     for (uint8_t i = 0; i < n; i++) {
         fprintf(stream, "%d", shape[i]);
@@ -594,7 +664,7 @@ void tprint_stride(uint32_t n, stride_t *stride) {
 }
 
 void tfprint_stride(FILE *stream, uint32_t n, stride_t *stride) {
-    if (stride == NULL) return;
+    if (stride == NULL) n = 0;
     fprintf(stream, "(");
     for (uint8_t i = 0; i < n; i++) {
         fprintf(stream, "%u", stride[i]);

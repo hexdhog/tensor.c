@@ -8,6 +8,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <errno.h>
+#include <limits.h>
 
 typedef int32_t dim_t;
 typedef int32_t dim_sz_t; // TODO: int32_t or int64_t?
