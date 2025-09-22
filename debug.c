@@ -31,17 +31,43 @@ uint8_t dbg_start(int8_t lvl, const char *name) {
     uint8_t id = 0;
     if (dbglvl() >= lvl) {
         id = _dbg_last++;
+        // printf("s[");
+        // for (uint8_t i = 0; i <= id+1; i++) printf("%d%s", _dbg_mod[i], i < id+1 ? " " : "");
+        // printf("]");
         if (id > 0 && _dbg_mod[id-1] == 1) printf("\n");
         printf("%*s", id * DBG_ALIGN, ""); \
         printf(YEL "%s" RST " ", name);
         _dbg_mod[id] = 1;
+        // printf("se[");
+        // for (uint8_t i = 0; i <= id+1; i++) printf("%d%s", _dbg_mod[i], i < id+1 ? " " : "");
+        // printf("]");
     }
     return id;
+}
+
+void dbg(uint8_t id, int8_t lvl, const char *fmt, ...) {
+    if (dbglvl() >= (int8_t)(lvl)) {
+        // printf("d[");
+        // for (uint8_t i = 0; i <= id+1; i++) printf("%d%s", _dbg_mod[i], i < id+1 ? " " : "");
+        // printf("]");
+        for (uint8_t i = 0; i <= id; i++) _dbg_mod[i] = 1;
+        if (_dbg_mod[id + 1] == 1) {
+            printf("\n%*s", id * DBG_ALIGN, "");
+            _dbg_mod[id + 1] = 0;
+        }
+        va_list args;
+        va_start(args, fmt);
+        vprintf(fmt, args);
+        va_end(args);
+    }
 }
 
 void dbg_end(uint8_t id, int8_t lvl) {
     if (_dbg_last == 0) return;
     if (dbglvl() >= lvl) {
+        // printf("e[");
+        // for (uint8_t i = 0; i <= id+1; i++) printf("%d%s", _dbg_mod[i], i < id+1 ? " " : "");
+        // printf("]");
         if (_dbg_mod[id] == 1) printf("\n");
         for (uint8_t i = 0; i <= id; i++) _dbg_mod[i] = 0;
         _dbg_last--;

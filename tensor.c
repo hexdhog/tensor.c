@@ -6,7 +6,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define SWAP(a, b) do { typeof(a) tmp = (a); (a) = (b); (b) = tmp; } while (0)
 
-static void tprint_internal(tensor_t *t);
+static void dbg_tensor(uint8_t id, int8_t lvl, tensor_t *);
 
 /**
  * Creates a tensor and allocates the required memory for it
@@ -43,7 +43,7 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
     t->data = malloc(t->numel * sizeof(*t->data));
     assert(t->data != NULL);
 
-    dbg(id, 1, { tprint_internal(t); });
+    dbg_tensor(id, 1, t);
     dbg_end(id, 1);
 
     return t;
@@ -58,7 +58,7 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
 void tensor_free(tensor_t *t) {
     uint8_t id = dbg_start(1, __func__);
     if (t != NULL) {
-        dbg(id, 1, { tprint_internal(t); });
+        dbg_tensor(id, 1, t);
         if (t->shape != NULL) {
             free(t->shape);
             t->shape = NULL;
@@ -87,25 +87,26 @@ void tensor_free(tensor_t *t) {
 tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
     uint8_t id = dbg_start(1, __func__);
     assert(t != NULL);
-    dbg(id, 1, {
-        printf("t=%p ", t);
-        printf("%d <-> %d : ", dim1, dim2);
-        tprint_shape(t->ndim, t->shape);
-        printf("-");
-        tprint_stride(t->ndim, t->stride);
-        printf(" -> ");
-    });
+    // dbg(id, 1, "t=%p ", t);
+    // dbg(id, 1, {
+    //     printf("t=%p ", t);
+    //     printf("%d <-> %d : ", dim1, dim2);
+    //     tprint_shape(t->ndim, t->shape);
+    //     printf("-");
+    //     tprint_stride(t->ndim, t->stride);
+    //     printf(" -> ");
+    // });
     dim1 = resolve_dim(t->ndim, dim1);
     dim2 = resolve_dim(t->ndim, dim2);
     if (dim1 == dim2) return t; // if both dims are the same there's nothing to do
     // swap both shape and stride for the specified dimensions
     SWAP(t->shape[dim1], t->shape[dim2]);
     SWAP(t->stride[dim1], t->stride[dim2]);
-    dbg(id, 1, {
-        tprint_shape(t->ndim, t->shape);
-        printf("-");
-        tprint_stride(t->ndim, t->stride);
-    });
+    // dbg(id, 1, {
+    //     tprint_shape(t->ndim, t->shape);
+    //     printf("-");
+    //     tprint_stride(t->ndim, t->stride);
+    // });
     dbg_end(id, 1);
     return t;
 }
@@ -126,13 +127,13 @@ bool is_contiguous(tensor_t *t) {
         if (t->stride[i] != mul) ret = false;
         else mul *= t->shape[i];
     }
-    dbg(id, 2, {
-        printf("t=%p ", t);
-        tprint_shape(t->ndim, t->shape);
-        printf("-");
-        tprint_stride(t->ndim, t->stride);
-        printf(" %s" RST, ret ? GRN "true" : RED "false");
-    });
+    // dbg(id, 2, {
+    //     printf("t=%p ", t);
+    //     tprint_shape(t->ndim, t->shape);
+    //     printf("-");
+    //     tprint_stride(t->ndim, t->stride);
+    //     printf(" %s" RST, ret ? GRN "true" : RED "false");
+    // });
     dbg_end(id, 2);
     return ret;
 }
@@ -146,7 +147,7 @@ bool is_contiguous(tensor_t *t) {
 tensor_t *contiguous(tensor_t *t) {
     uint8_t id = dbg_start(1, __func__);
     assert(t != NULL);
-    dbg(id, 1, { tprint_internal(t); printf("\n"); });
+    dbg_tensor(id, 1, t);
     assert(t->shape != NULL);
     assert(t->stride != NULL);
     if (!is_contiguous(t)) {
@@ -196,10 +197,10 @@ dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape) {
     assert(ndim > 0);
     assert(shape != NULL);
 
-    dbg(id, 3, {
-        tprint_shape(ndim, shape);
-        printf(" -> ");
-    });
+    // dbg(id, 3, {
+    //     tprint_shape(ndim, shape);
+    //     printf(" -> ");
+    // });
 
     dim_t dim = -1;
     uint32_t mul = 1;
@@ -214,9 +215,9 @@ dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape) {
 
     if (dim > 0) shape[dim] = numel / mul;
 
-    dbg(id, 3, {
-        tprint_shape(ndim, shape);
-    });
+    // dbg(id, 3, {
+    //     tprint_shape(ndim, shape);
+    // });
     dbg_end(id, 3);
 
     return dim;
@@ -232,10 +233,10 @@ dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape) {
  */
 dim_t resolve_dim(dim_t ndim, dim_t dim) {
     uint8_t id = dbg_start(3, __func__);
-    dbg(id, 3, { printf("ndim=%d dim=%d -> ", ndim, dim); });
+    // dbg(id, 3, { printf("ndim=%d dim=%d -> ", ndim, dim); });
     dim = dim >= 0 ? dim : dim + ndim;
     assert(dim < ndim);
-    dbg(id, 3, { printf("dim=%d", dim); });
+    // dbg(id, 3, { printf("dim=%d", dim); });
     dbg_end(id, 3);
     return dim;
 }
@@ -290,7 +291,7 @@ bool resolve_view(dim_t old_ndim, dim_sz_t *old_shape, stride_t *old_stride, dim
 tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
     uint8_t id = dbg_start(1, __func__);
     assert(t != NULL);
-    dbg(id, 1, { tprint_internal(t); });
+    dbg_tensor(id, 1, t);
 
     resolve_shape(t->numel, ndim, shape);
     uint32_t numel = ndim > 0 ? 1 : 0;
@@ -575,15 +576,30 @@ static bool has_decimals(double x) {
     return frac != 0.0;
 }
 
-static void tprint_internal(tensor_t *t) {
-    printf("t=%p", t);
-    printf(" shape=");
-    tprint_shape(t->ndim, t->shape);
-    printf(" stride=");
-    tprint_stride(t->ndim, t->stride);
-    printf(" numel=%u", t->numel);
+static void dbg_tensor(uint8_t id, int8_t lvl, tensor_t *t) {
+    dbg(id, lvl, "t=%p", t);
+
+    dbg(id, lvl, " shape=");
+    dbg(id, lvl, "(");
+    for (uint8_t i = 0; i < t->ndim; i++) {
+        dbg(id, lvl, "%d", t->shape[i]);
+        if (i < t->ndim-1) dbg(id, lvl, ", ");
+    }
+    dbg(id, lvl, ")");
+
+    dbg(id, lvl, " stride=");
+    dbg(id, lvl, " shape=");
+    dbg(id, lvl, "(");
+    for (uint8_t i = 0; i < t->ndim; i++) {
+        dbg(id, lvl, "%zu", t->stride[i]);
+        if (i < t->ndim-1) dbg(id, lvl, ", ");
+    }
+    dbg(id, lvl, ")");
+
+    dbg(id, lvl, " numel=%u", t->numel);
+
     uint64_t sz = sizeof(tensor_t) + t->ndim * (sizeof(*t->shape) + sizeof(*t->stride)) + t->numel * sizeof(*t->data);
-    printf(" size=%lluB", sz);
+    dbg(id, lvl, " size=%lluB", sz);
 }
 
 void tfprint(FILE *stream, tensor_t *t) {
