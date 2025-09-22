@@ -70,32 +70,30 @@ const char *test_reshape() {
     // }
 
     // contiguous but compatible, tries to match strides
+    // {
+    //     tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
+    //     for (uint32_t i = 0; i < t->numel; i++) t->data[i] = i + 1;
+    //     transpose(t, 0, 1);
+    //     reshape(t, 1, (dim_sz_t[]){6});
+    //     assert(t->ndim == 1);
+    //     assert(memcmp(t->stride, (stride_t[]){1}, t->ndim * sizeof(*t->stride)) == 0);
+    //     tensor_free(t);
+    // }
+
+    // non-contiguous but not compatible, performs contiguous copy
     {
         tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
         for (uint32_t i = 0; i < t->numel; i++) t->data[i] = i + 1;
         transpose(t, 0, 1);
-        // reshape(t, 3, (dim_sz_t[]){2, 1, 3});
-        reshape(t, 1, (dim_sz_t[]){6});
-        assert(t->ndim == 1);
-        // assert(memcmp(t->stride, (stride_t[]){3, 3, 1}, t->ndim * sizeof(*t->stride)) == 0);
+        assert(t->ndim == 2);
+        assert(memcmp(t->shape, (stride_t[]){3, 2}, t->ndim * sizeof(*t->shape)) == 0);
+        assert(memcmp(t->stride, (stride_t[]){1, 3}, t->ndim * sizeof(*t->stride)) == 0);
+        reshape(t, 2, (dim_sz_t[]){2, 3});
+        assert(t->ndim == 2);
+        // assert(memcmp(t->shape, (stride_t[]){6}, t->ndim * sizeof(*t->shape)) == 0);
+        // assert(memcmp(t->stride, (stride_t[]){1}, t->ndim * sizeof(*t->stride)) == 0);
         tensor_free(t);
     }
-
-    // non-contiguous but not compatible, performs contiguous copy
-    // {
-    //     tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
-
-    //     for (uint32_t i = 0; i < t->numel; i++) t->data[i] = i + 1;
-    //     transpose(t, 0, 1);
-    //     assert(t->ndim == 2);
-    //     assert(memcmp(t->shape, (stride_t[]){3, 2}, t->ndim * sizeof(*t->shape)) == 0);
-    //     assert(memcmp(t->stride, (stride_t[]){1, 3}, t->ndim * sizeof(*t->stride)) == 0);
-    //     reshape(t, 2, (dim_sz_t[]){2, 3});
-    //     assert(t->ndim == 2);
-    //     assert(memcmp(t->shape, (stride_t[]){6}, t->ndim * sizeof(*t->shape)) == 0);
-    //     assert(memcmp(t->stride, (stride_t[]){1}, t->ndim * sizeof(*t->stride)) == 0);
-    //     tensor_free(t);
-    // }
 
     return __func__;
 }
