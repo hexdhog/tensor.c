@@ -61,42 +61,44 @@ const char *test_is_contiguous() {
 
 const char *test_reshape() {
     // contiguous, computes strides directy
-    // {
-    //     tensor_t *t = tensor_alloc(1, (dim_sz_t[]){6});
-    //     reshape(t, 2, (dim_sz_t[]){2, 3});
-    //     assert(t->ndim == 2);
-    //     assert(memcmp(t->stride, (stride_t[]){3, 1}, t->ndim * sizeof(*t->stride)) == 0);
-    //     tensor_free(t);
-    // }
+    {
+        tensor_t *t = tensor_alloc(1, (dim_sz_t[]){6});
+        reshape(t, 2, (dim_sz_t[]){2, 3});
+        assert(t->ndim == 2);
+        assert(memcmp(t->stride, (stride_t[]){3, 1}, t->ndim * sizeof(*t->stride)) == 0);
+        tensor_free(t);
+    }
 
-    // contiguous but compatible, tries to match strides
-    // {
-    //     tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
-    //     for (uint32_t i = 0; i < t->numel; i++) t->data[i] = i + 1;
-    //     transpose(t, 0, 1);
-    //     reshape(t, 1, (dim_sz_t[]){6});
-    //     assert(t->ndim == 1);
-    //     assert(memcmp(t->stride, (stride_t[]){1}, t->ndim * sizeof(*t->stride)) == 0);
-    //     tensor_free(t);
-    // }
-
-    // non-contiguous but not compatible, performs contiguous copy
+    // non-contiguous, copies and computes strides
     {
         tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
         for (uint32_t i = 0; i < t->numel; i++) t->data[i] = i + 1;
         transpose(t, 0, 1);
-        assert(t->ndim == 2);
-        assert(memcmp(t->shape, (stride_t[]){3, 2}, t->ndim * sizeof(*t->shape)) == 0);
-        assert(memcmp(t->stride, (stride_t[]){1, 3}, t->ndim * sizeof(*t->stride)) == 0);
-        reshape(t, 2, (dim_sz_t[]){2, 3});
-        assert(t->ndim == 2);
-        // assert(memcmp(t->shape, (stride_t[]){6}, t->ndim * sizeof(*t->shape)) == 0);
-        // assert(memcmp(t->stride, (stride_t[]){1}, t->ndim * sizeof(*t->stride)) == 0);
+        reshape(t, 1, (dim_sz_t[]){6});
+        assert(t->ndim == 1);
+        assert(memcmp(t->stride, (stride_t[]){1}, t->ndim * sizeof(*t->stride)) == 0);
         tensor_free(t);
     }
 
     return __func__;
 }
+
+/********************* BROADCAST *********************/
+
+const char *test_broadcast() {
+    dim_sz_t *ashape = NULL, *bshape = NULL;
+    assert(broadcast(2, (dim_sz_t[]){3, 4}, NULL, 2, (dim_sz_t[]){4, 1}, NULL) == 0);
+    assert(broadcast(2, (dim_sz_t[]){3, 4}, NULL, 1, (dim_sz_t[]){2}, NULL) == 0);
+    assert(broadcast(2, (dim_sz_t[]){3, 4}, NULL, 1, (dim_sz_t[]){1, 4}, NULL) == 2);
+    assert(broadcast(3, (dim_sz_t[]){3, 1, 4}, NULL, 3, (dim_sz_t[]){1, 2, 4}, NULL) == 3);
+    assert(broadcast(3, (dim_sz_t[]){3, 1, 4}, NULL, 1, (dim_sz_t[]){4}, NULL) == 3);
+    assert(broadcast(3, (dim_sz_t[]){2, 3, 4}, &ashape, 2, (dim_sz_t[]){1, 4}, &bshape) == 3);
+    assert(memcmp(ashape, (dim_sz_t[]){2, 3, 4}, sizeof(3 * sizeof(dim_sz_t))) == 0);
+    assert(memcmp(bshape, (dim_sz_t[]){1, 1, 4}, sizeof(3 * sizeof(dim_sz_t))) == 0);
+
+    return __func__;
+}
+
 
 /********************* SUM *********************/
 
@@ -220,7 +222,8 @@ const char *test_sum_dim4() {
 const char *(*fnx[])(void) = {
     // test_transpose,
     // test_is_contiguous,
-    test_reshape
+    // test_reshape,
+    test_broadcast
     // test_sumall, test_sum_dim0, test_sum_dim1_keepdim, test_sum_negative_dim, test_sum_dim_out_of_range, test_sum_dim4,
 };
 

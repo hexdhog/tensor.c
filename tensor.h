@@ -15,6 +15,12 @@ typedef int32_t dim_t;
 typedef int32_t dim_sz_t; // TODO: int32_t or int64_t?
 typedef uint32_t stride_t;
 
+// TODO: add view_t to tensor_t to allow multiple tensors to point to the same data (good idea?)
+typedef struct {
+    uint32_t refs; // number of tensors that point to this view (0 -> data should be freed)
+    float *data;
+} view_t;
+
 // TODO: add strides
 typedef struct {
     dim_t ndim;
@@ -35,8 +41,8 @@ bool is_contiguous(tensor_t *t);
 tensor_t *contiguous(tensor_t *t);
 dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape);
 dim_t resolve_dim(dim_t ndim, dim_t dim);
+uint8_t broadcast(dim_t andim, dim_sz_t *asrc, dim_sz_t **adst, dim_t bndim, dim_sz_t *bsrc, dim_sz_t **bdst);
 
-uint8_t broadcast(tensor_t *a, dim_sz_t **ashape, tensor_t *b, dim_sz_t **bshape);
 tensor_t *squeeze(tensor_t *t, dim_t dim);
 tensor_t *unsqueeze(tensor_t *t, dim_t dim);
 tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2);

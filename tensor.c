@@ -236,76 +236,6 @@ dim_t resolve_dim(dim_t ndim, dim_t dim) {
     return d;
 }
 
-// **** code below does not work/untested with strides
-
-// TODO: explain how this works in comments
-// TODO: write tests for resolve_view
-/**
- * Given an original shape with its strides and a new desired shape,
- * attempts to compute the strides fot the desired shape so that data is contiguous.
- * 
- * @param old_ndim original number of dimensions
- * @param old_shape original shape
- * @param old_stride original stride
- * @param new_shape desired shape
- * @param new_stride pointer to where new strides will be stored
- * @return true if new strides have been found, false otherwise
- */
-bool resolve_view(dim_t old_ndim, dim_sz_t *old_shape, stride_t *old_stride, dim_t new_ndim, dim_sz_t *new_shape, stride_t *new_stride) {
-    dim_t i = old_ndim - 1, j = new_ndim - 1;
-
-    memset(new_stride, 0, new_ndim * sizeof(*new_stride)); // only needed for debug
-    DBG(3, { printf("i: %d; j: %d", i, j); });
-
-    while (j >= 0) {
-        DBG(3, {
-            assert(tuple2str(old_shape, old_ndim, sizeof(*old_shape), "%d", buff, BUFF_SIZE) > 0);
-            printf("shape=%s ", buff);
-            assert(tuple2str(old_stride, old_ndim, sizeof(*old_stride), "%u", buff, BUFF_SIZE) > 0);
-            printf("stride=%s -> ", buff);
-            assert(tuple2str(new_shape, new_ndim, sizeof(*new_shape), "%d", buff, BUFF_SIZE) > 0);
-            printf("shape=%s ", buff);
-            assert(tuple2str(new_stride, new_ndim, sizeof(*new_stride), "%u", buff, BUFF_SIZE) > 0);
-            printf("stride=%s", buff);
-        });
-        if (new_shape[j] == 1) {
-            // stride can be anything -> set to 1 for safety
-            new_stride[j] = 1;
-            j--;
-            continue;
-        }
-
-        // we need to match the current new dimension
-        const dim_sz_t shape_target = new_shape[j];
-        if (i < 0) {
-            DBG(3, { printf("no more old dims left!"); });
-            return false; // no more old dims left
-        }
-
-        dim_sz_t shape = old_shape[i], stride = old_stride[i];
-        i--;
-
-        // try to consume old dims until shape sizes match for current new dimension
-        while (shape < shape_target && i >= 0) {
-            // check for contiguity (are dims [i] and [i+1] adjacent); not contiguous would need a copy
-            if (old_stride[i] != old_shape[i] * old_stride[i+1]) {
-                DBG(3, { printf("not contiguous!"); });
-                return false;
-            }
-            shape *= old_shape[i];
-            stride = old_stride[i]; // update stride base
-            i--;
-        }
-
-        if (shape != shape_target) return false;
-
-        new_stride[j] = stride;
-        j--;
-    }
-
-    return true;
-}
-
 /**
  * Change the shape of a tensor
  * 
@@ -322,35 +252,20 @@ tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
     for (dim_t i = 0; i < ndim; i++) numel *= shape[i];
     assert(t->numel == numel);
 
-    if (is_contiguous(t)) {
-        t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
-        assert(t->stride != NULL);
-        t->stride[ndim-1] = 1;
-        for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * shape[i+1];
-        DBG(1, {
-            assert(tinfo(t, buff, BUFF_SIZE) > 0);
-            printf("%s %s", buff, GRN "stride only" RST);
-        });
-    } else {
-        stride_t *stride = malloc(ndim * sizeof(*stride));
-        assert(t->stride != NULL);
-        if (!resolve_view(t->ndim, t->shape, t->stride, ndim, shape, stride)) {
-            DBG(1, {
-                assert(tinfo(t, buff, BUFF_SIZE) > 0);
-                printf("%s %s", buff, RED "copy" RST);
-            });
-            contiguous(t);
-            stride[ndim-1] = 1;
-            for (dim_t i = ndim-2; i >= 0; i--) stride[i] = stride[i+1] * shape[i+1];
-        } else {
-            DBG(1, {
-                assert(tinfo(t, buff, BUFF_SIZE) > 0);
-                printf("%s %s", buff, CYN "block match" RST);
-            });
-        }
-        free(t->stride);
-        t->stride = stride;
-    }
+    // TODO: for certain non-contiguous cases, the strides can be computed without needing a contiguous copy
+    //       according to ChatGPT: https://chatgpt.com/share/68d57068-038c-8004-bb0b-56be52f7577a
+    //       keeping it simple for now but definitely interesting to explore
+    bool c = is_contiguous(t);
+    DBG(1, {
+        assert(tinfo(t, buff, BUFF_SIZE) > 0);
+        printf("%s %s", buff, c ? GRN "stride only" RST : RED "copy" RST);
+    });
+    if (!c) contiguous(t);
+
+    t->stride = realloc(t->stride, ndim * sizeof(*t->stride));
+    assert(t->stride != NULL);
+    t->stride[ndim-1] = 1;
+    for (dim_t i = ndim-2; i >= 0; i--) t->stride[i] = t->stride[i+1] * shape[i+1];
 
     t->ndim = ndim;
     t->shape = realloc(t->shape, t->ndim * sizeof(*t->shape));
@@ -361,48 +276,53 @@ tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
 }
 
 /**
- * Broadcasts tensor a with tensor b and stores the new shapes into ashape and bshape respectively,
+ * Broadcasts shape a with shape b and stores the new shapes into ashape and bshape respectively,
  * following NumPy's broadcast rules: https://numpy.org/doc/stable/user/basics.broadcasting.html#general-broadcasting-rules
+ * The resulting adst and bdst shapes will be the same as their asrc and bsrc shapes with filled in 1's
+ * where necessary to make them broadcastable.
  * 
- * @param a tensor one to broadcast
- * @param ashape new shape for tensor one (pass NULL if not interested in new shape for tensor one)
- * @param b tensor two to broadcast
- * @param bshape new shape for tensor two (pass NULL if not interested in new shape for tensor two)
+ * @param andim number of dimensions of shape a
+ * @param asrc shape a
+ * @param adst new shape a (pass NULL if not interested in new shape)
+ * @param bndim number of dimensions of shape b
+ * @param bsrc shape b
+ * @param bdst new shape b (pass NULL if not interested in new shape)
  * @return number of dimensions of the broadcasted shapes, or 0 if shapes are not broadcastable
  */
-uint8_t broadcast(tensor_t *a, dim_sz_t **ashape, tensor_t *b, dim_sz_t **bshape) {
-    assert(a != NULL);
-    assert(b != NULL);
-    assert(a->shape != NULL);
-    assert(b->shape != NULL);
+uint8_t broadcast(dim_t andim, dim_sz_t *asrc, dim_sz_t **adst, dim_t bndim, dim_sz_t *bsrc, dim_sz_t **bdst) {
+    assert(asrc != NULL);
+    assert(bsrc != NULL);
 
-    dim_t ndim = MAX(a->ndim, b->ndim);
-    dim_t offa = ndim - a->ndim, offb = ndim - b->ndim;
+    dim_t ndim = MAX(andim, bndim);
+    dim_t offa = ndim - andim, offb = ndim - bndim;
 
-    dim_sz_t *_ashape = malloc(ndim * sizeof(*a->shape));
-    assert(_ashape != NULL);
-    dim_sz_t *_bshape = malloc(ndim * sizeof(*b->shape));
-    assert(_bshape != NULL);
+    dim_sz_t *ashape = malloc(ndim * sizeof(*asrc));
+    assert(ashape != NULL);
+    dim_sz_t *bshape = malloc(ndim * sizeof(*bsrc));
+    assert(bshape != NULL);
 
+    // align each shape src to the right and check if each of their size match (or is 1)
     for (dim_t i = 0; i < ndim; i++) {
-        dim_sz_t sa = i < offa ? 1 : a->shape[i - offa];
-        dim_sz_t sb = i < offb ? 1 : b->shape[i - offb];
+        dim_sz_t sa = i < offa ? 1 : asrc[i - offa];
+        dim_sz_t sb = i < offb ? 1 : bsrc[i - offb];
         if (sa != sb && sa != 1 && sb != 1) {
-            free(_ashape);
-            free(_bshape);
+            free(ashape);
+            free(bshape);
             return 0;
         }
-        _ashape[i] = sa;
-        _bshape[i] = sb;
+        ashape[i] = sa;
+        bshape[i] = sb;
     }
 
-    if (ashape != NULL) *ashape = _ashape;
-    else free(_ashape);
-    if (bshape != NULL) *bshape = _bshape;
-    else free(_bshape);
+    if (adst != NULL) *adst = ashape;
+    else free(ashape);
+    if (bdst != NULL) *bdst = bshape;
+    else free(bshape);
 
     return ndim;
 }
+
+// **** code below does not work/untested with strides
 
 /**
  * Removes the specified dimension of size 1
@@ -558,7 +478,7 @@ static tensor_t *ewop(tensor_t *a, tensor_t *b, tensor_op_t op) {
     assert(b != NULL);
 
     dim_sz_t *ashape, *bshape;
-    dim_t ndim = broadcast(a, &ashape, b, &bshape);
+    dim_t ndim = broadcast(a->ndim, a->shape, &ashape, b->ndim, b->shape, &bshape);
     assert(ndim > 0);
 
     dim_sz_t *cshape = malloc(ndim * sizeof(*cshape));
