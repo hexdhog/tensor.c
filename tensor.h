@@ -36,8 +36,9 @@ typedef enum {
 } tensor_op_t;
 
 tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape);
-tensor_t *range(float start, float end, float step);
 void tensor_free(tensor_t *t);
+tensor_t *range(float start, float end, float step);
+tensor_t *fill(uint32_t numel, float value);
 bool is_contiguous(tensor_t *t);
 tensor_t *contiguous(tensor_t *t);
 dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape);
@@ -51,7 +52,7 @@ tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape);
 tensor_t *min(tensor_t *t);
 tensor_t *max(tensor_t *t);
 tensor_t *sumall(tensor_t *t);
-tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim);
+tensor_t *sum(tensor_t *t, dim_t dim, bool keepdim);
 tensor_t *add(tensor_t *a, tensor_t *b);
 tensor_t *mul(tensor_t *a, tensor_t *b);
 void tfinfo(FILE *stream, tensor_t *t);

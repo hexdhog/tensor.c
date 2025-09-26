@@ -55,18 +55,6 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
     return t;
 }
 
-tensor_t *range(float start, float end, float step) {
-    assert(start < end);
-    uint32_t numel = (end - start) / step;
-    tensor_t *t = tensor_alloc(1, (dim_sz_t[]){numel});
-    float acc = start;
-    for (uint32_t i = 0; i < t->numel; i++) {
-        t->data[i] = acc;
-        acc += step;
-    }
-    return t;
-}
-
 /**
  * Frees all of the memory allocated to the tensor and sets its internal pointers to NULL.
  * The memory for the tensor_t struct is freed but it is not responsible for setting any variables pointing to it to NULL.
@@ -94,6 +82,41 @@ void tensor_free(tensor_t *t) {
         }
         free(t);
     }
+}
+
+/**
+ * Creates a tensor with the range [start, end) and the specified step size.
+ * The number of elements in the tensor will be: (end - start) / step
+ * 
+ * @param start start value (first element)
+ * @param end stop value (value after the last element)
+ * @param step step value (difference between any two contiguous elements)
+ * @return tensor filled with the specified range
+ */
+tensor_t *range(float start, float end, float step) {
+    assert(start < end);
+    uint32_t numel = (end - start) / step;
+    tensor_t *t = tensor_alloc(1, (dim_sz_t[]){numel});
+    float acc = start;
+    for (uint32_t i = 0; i < t->numel; i++) {
+        t->data[i] = acc;
+        acc += step;
+    }
+    return t;
+}
+
+/**
+ * Creates a tensor with numel elements and sets all of the to value.
+ * 
+ * @param numel number of elements in the tensor
+ * @param value value to set all elements to
+ * @return filled tensor
+ */
+tensor_t *fill(uint32_t numel, float value) {
+    assert(numel > 0);
+    tensor_t *t = tensor_alloc(1, (dim_sz_t[]){numel});
+    memset(t->data, value, t->numel * sizeof(value));
+    return t;
 }
 
 /**

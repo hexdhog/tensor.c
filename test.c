@@ -257,18 +257,16 @@ const char *test_sum_dim4() {
 }
 
 const char *(*fnx[])(void) = {
-    // test_transpose,
-    // test_is_contiguous,
-    // test_reshape,
-    // test_broadcast,
+    test_transpose,
+    test_is_contiguous,
+    test_reshape,
+    test_broadcast,
     test_squeeze_unqueeze 
     // test_sumall, test_sum_dim0, test_sum_dim1_keepdim, test_sum_negative_dim, test_sum_dim_out_of_range, test_sum_dim4,
 };
 
 int main(int argc, char **argv) {
-    // for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
-    tensor_t *t = range(1, 25, 1);
-    tprint(t);
+    for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
 
     return 0;
 }
