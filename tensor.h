@@ -42,17 +42,19 @@ tensor_t *contiguous(tensor_t *t);
 dim_t resolve_shape(uint32_t numel, dim_t ndim, dim_sz_t *shape);
 dim_t resolve_dim(dim_t ndim, dim_t dim);
 uint8_t broadcast(dim_t andim, dim_sz_t *asrc, dim_sz_t **adst, dim_t bndim, dim_sz_t *bsrc, dim_sz_t **bdst);
-
 tensor_t *squeeze(tensor_t *t, dim_t dim);
 tensor_t *unsqueeze(tensor_t *t, dim_t dim);
 tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2);
 tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape);
+
 tensor_t *min(tensor_t *t);
 tensor_t *max(tensor_t *t);
 tensor_t *sumall(tensor_t *t);
 tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim);
 tensor_t *add(tensor_t *a, tensor_t *b);
 tensor_t *mul(tensor_t *a, tensor_t *b);
+void tfinfo(FILE *stream, tensor_t *t);
+void tinfo(tensor_t *t);
 void tfprint(FILE *stream, tensor_t *t);
 void tprint(tensor_t *t);
 void tprint_shape(uint32_t n, dim_sz_t *shape);

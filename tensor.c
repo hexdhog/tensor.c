@@ -9,7 +9,7 @@
 #define BUFF_SIZE 512
 static char buff[BUFF_SIZE];
 
-static size_t tinfo(tensor_t *t, char *dst, const size_t dstlen);
+static size_t tinfo2str(tensor_t *t, char *dst, const size_t dstlen);
 static size_t tuple2str(void *tuple, const size_t numel, const size_t szel, const char *const fmtel, char *dst, const size_t dstlen);
 
 /**
@@ -47,7 +47,7 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
     assert(t->data != NULL);
 
     DBG(1, {
-        assert(tinfo(t, buff, BUFF_SIZE) != 0);
+        assert(tinfo2str(t, buff, BUFF_SIZE) != 0);
         uint64_t sz = sizeof(tensor_t) + t->ndim * (sizeof(*t->shape) + sizeof(*t->stride)) + t->numel * sizeof(*t->data);
         printf("%s numel=%u sz=%llu", buff, t->numel, sz);
     });
@@ -64,7 +64,7 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
 void tensor_free(tensor_t *t) {
     if (t != NULL) {
         DBG(1, {
-            assert(tinfo(t, buff, BUFF_SIZE) != 0);
+            assert(tinfo2str(t, buff, BUFF_SIZE) != 0);
             uint64_t sz = sizeof(tensor_t) + t->ndim * (sizeof(*t->shape) + sizeof(*t->stride)) + t->numel * sizeof(*t->data);
             printf("%s numel=%u sz=%llu", buff, t->numel, sz);
         });
@@ -97,7 +97,7 @@ tensor_t *transpose(tensor_t *t, dim_t dim1, dim_t dim2) {
     dim1 = resolve_dim(t->ndim, dim1);
     dim2 = resolve_dim(t->ndim, dim2);
     DBG(1, {
-        assert(tinfo(t, buff, BUFF_SIZE) > 0);
+        assert(tinfo2str(t, buff, BUFF_SIZE) > 0);
         printf("%s - [%d, %d]", buff, dim1, dim2);
     });
     if (dim1 != dim2) {
@@ -124,7 +124,7 @@ bool is_contiguous(tensor_t *t) {
         else mul *= t->shape[i];
     }
     DBG(2, {
-        assert(tinfo(t, buff, BUFF_SIZE) > 0);
+        assert(tinfo2str(t, buff, BUFF_SIZE) > 0);
         printf("%s %s", buff, ret ? GRN "true" : RED "false");
     });
     return ret;
@@ -142,7 +142,7 @@ tensor_t *contiguous(tensor_t *t) {
     assert(t->stride != NULL);
     bool c = is_contiguous(t);
     DBG(1, {
-        assert(tinfo(t, buff, BUFF_SIZE) != 0);
+        assert(tinfo2str(t, buff, BUFF_SIZE) != 0);
         printf("%s %s", buff, c ? GRN "nocopy" RST : RED "copy" RST);
     });
     if (!c) {
@@ -257,7 +257,7 @@ tensor_t *reshape(tensor_t *t, dim_t ndim, dim_sz_t *shape) {
     //       keeping it simple for now but definitely interesting to explore
     bool c = is_contiguous(t);
     DBG(1, {
-        assert(tinfo(t, buff, BUFF_SIZE) > 0);
+        assert(tinfo2str(t, buff, BUFF_SIZE) > 0);
         printf("%s %s", buff, c ? GRN "stride only" RST : RED "copy" RST);
     });
     if (!c) contiguous(t);
@@ -322,8 +322,6 @@ uint8_t broadcast(dim_t andim, dim_sz_t *asrc, dim_sz_t **adst, dim_t bndim, dim
     return ndim;
 }
 
-// **** code below does not work/untested with strides
-
 /**
  * Removes the specified dimension of size 1
  * 
@@ -334,11 +332,15 @@ uint8_t broadcast(dim_t andim, dim_sz_t *asrc, dim_sz_t **adst, dim_t bndim, dim
 tensor_t *squeeze(tensor_t *t, dim_t dim) {
     assert(t != NULL);
     assert(t->shape != NULL);
-    if (t->ndim <= 1) return t;
+
     dim_t d = resolve_dim(t->ndim, dim);
-    if (t->shape[d] != 1) return t;
-    for (dim_t i = d; i < t->ndim-1; i++) t->shape[i] = t->shape[i+1];
+    if (t->shape[d] != 1 || t->ndim == 1) return t;
+    for (dim_t i = d; i < t->ndim-1; i++) {
+        t->shape[i] = t->shape[i+1];
+        t->stride[i] = t->stride[i+1];
+    }
     t->ndim--;
+
     return t;
 }
 
@@ -352,18 +354,36 @@ tensor_t *squeeze(tensor_t *t, dim_t dim) {
 tensor_t *unsqueeze(tensor_t *t, dim_t dim) {
     assert(t != NULL);
     assert(t->shape != NULL);
-    dim_t d = resolve_dim(t->ndim, dim);
+    assert(t->stride != NULL);
+
     dim_t ndim = t->ndim + 1;
+    dim_t d = resolve_dim(ndim, dim);
+
     dim_sz_t *shape = malloc(ndim * sizeof(*shape));
     assert(shape != NULL);
-    for (dim_t i = 0; i < d; i++) shape[i] = t->shape[i];
+    memcpy(shape, t->shape, t->ndim * sizeof(*shape));
+
+    stride_t *stride = malloc(ndim * sizeof(*stride));
+    assert(stride != NULL);
+    memcpy(stride, t->stride, t->ndim * sizeof(*stride));
+
+    for (dim_t i = t->ndim; i > d; i--) {
+        shape[i] = shape[i-1];
+        stride[i] = stride[i-1];
+    }
     shape[d] = 1;
-    for (dim_t i = d; i < t->ndim; i++) shape[i+1] = t->shape[i];
-    t->ndim = ndim;
+    stride[d] = d+1 < ndim ? shape[d+1] * stride[d+1] : 1;
+
     free(t->shape);
     t->shape = shape;
+    free(t->stride);
+    t->stride = stride;
+    t->ndim = ndim;
+
     return t;
 }
+
+// **** code below does not work/untested with strides
 
 // TODO: add argmin/argmax and amin/amax
 // TODO: min/max functions can be simplified with ops (they are the exact same except for one symbol; like ewop)
@@ -570,7 +590,7 @@ static size_t tuple2str(void *tuple, const size_t numel, const size_t szel, cons
     return o;
 }
 
-static size_t tinfo(tensor_t *t, char *dst, const size_t dstlen) {
+static size_t tinfo2str(tensor_t *t, char *dst, const size_t dstlen) {
     int w = 0; // number of written characters by snprintf
     size_t o = 0; // dst current offset and length
 
@@ -591,6 +611,20 @@ static size_t tinfo(tensor_t *t, char *dst, const size_t dstlen) {
     o += w;
 
     return o;
+}
+
+void tfinfo(FILE *stream, tensor_t *t) {
+    assert(t != NULL);
+    assert(t->shape != NULL);
+    assert(t->ndim > 0);
+    assert(t->stride != NULL);
+    assert(t->data != NULL);
+    assert(tinfo2str(t, buff, BUFF_SIZE) > 0);
+    fprintf(stream, "%s\n", buff);
+}
+
+void tinfo(tensor_t *t) {
+    tfinfo(stdout, t);
 }
 
 void tfprint(FILE *stream, tensor_t *t) {
@@ -615,6 +649,7 @@ void tfprint(FILE *stream, tensor_t *t) {
 
     dim_t *index = malloc(t->ndim * sizeof(*index));
     assert(index != NULL);
+    memset(index, 0, t->ndim * sizeof(*index));
 
     dim_t nnln = 0; // number of new lines to print closing
     uint32_t idx = 0; // index of current element in t->data

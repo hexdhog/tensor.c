@@ -99,6 +99,43 @@ const char *test_broadcast() {
     return __func__;
 }
 
+/********************* SQUEEZE UNSQUEEZE *********************/
+
+const char *test_squeeze_unqueeze() {
+    tensor_t *t = tensor_alloc(3, (dim_sz_t[]){2, 3, 4});
+    for (uint32_t i = 0; i < t->numel; i++) t->data[i] = i+1;
+    unsqueeze(t, 1);
+    assert(t->ndim == 4);
+    assert(memcmp(t->shape, (dim_sz_t[]){2, 1, 3, 4}, t->ndim * sizeof(dim_sz_t)) == 0);
+    assert(memcmp(t->stride, (stride_t[]){12, 12, 4, 1}, t->ndim * sizeof(stride_t)) == 0);
+
+    squeeze(t, 1);
+    assert(t->ndim == 3);
+    assert(memcmp(t->shape, (dim_sz_t[]){2, 3, 4}, t->ndim * sizeof(dim_sz_t)) == 0);
+    assert(memcmp(t->stride, (stride_t[]){12, 4, 1}, t->ndim * sizeof(stride_t)) == 0);
+
+    unsqueeze(t, -1);
+    assert(t->ndim == 4);
+    assert(memcmp(t->shape, (dim_sz_t[]){2, 3, 4, 1}, t->ndim * sizeof(dim_sz_t)) == 0);
+    assert(memcmp(t->stride, (stride_t[]){12, 4, 1, 1}, t->ndim * sizeof(stride_t)) == 0);
+
+    squeeze(t, -1);
+    assert(t->ndim == 3);
+    assert(memcmp(t->shape, (dim_sz_t[]){2, 3, 4}, t->ndim * sizeof(dim_sz_t)) == 0);
+    assert(memcmp(t->stride, (stride_t[]){12, 4, 1}, t->ndim * sizeof(stride_t)) == 0);
+
+    unsqueeze(t, 0);
+    assert(t->ndim == 4);
+    assert(memcmp(t->shape, (dim_sz_t[]){1, 2, 3, 4}, t->ndim * sizeof(dim_sz_t)) == 0);
+    assert(memcmp(t->stride, (stride_t[]){24, 12, 4, 1}, t->ndim * sizeof(stride_t)) == 0);
+
+    squeeze(t, 0);
+    assert(t->ndim == 3);
+    assert(memcmp(t->shape, (dim_sz_t[]){2, 3, 4}, t->ndim * sizeof(dim_sz_t)) == 0);
+    assert(memcmp(t->stride, (stride_t[]){12, 4, 1}, t->ndim * sizeof(stride_t)) == 0);
+
+    return __func__;
+}
 
 /********************* SUM *********************/
 
@@ -223,47 +260,12 @@ const char *(*fnx[])(void) = {
     // test_transpose,
     // test_is_contiguous,
     // test_reshape,
-    test_broadcast
+    // test_broadcast,
+    test_squeeze_unqueeze 
     // test_sumall, test_sum_dim0, test_sum_dim1_keepdim, test_sum_negative_dim, test_sum_dim_out_of_range, test_sum_dim4,
 };
 
 int main(int argc, char **argv) {
     for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
-
-    // tensor_t *t = tensor_alloc(3, (dim_sz_t[]){2, 3, 4});
-    // for (uint32_t i = 0; i < t->numel; i++) t->data[i] = i + 1;
-
-    // printf("t.shape = ");
-    // tprint_shape(t->ndim, t->shape);
-    // printf("\n");
-    // printf("t.stride = ");
-    // tprint_stride(t->ndim, t->stride);
-    // printf("\n");
-    // printf("t.data = \n");
-    // tprint(t);
-
-    // printf("\ntranspose(t)\n\n");
-    // transpose(t, -1, -2);
-
-    // printf("t.shape = ");
-    // tprint_shape(t->ndim, t->shape);
-    // printf("\n");
-    // printf("t.stride = ");
-    // tprint_stride(t->ndim, t->stride);
-    // printf("\n");
-    // printf("t.data = \n");
-    // tprint(t);
-
-    // printf("\n");
-    // reshape(t, 6, (dim_sz_t[]){2, 1, 2, 2, 3, 1});
-    // printf("t.shape = ");
-    // tprint_shape(t->ndim, t->shape);
-    // printf("\n");
-    // printf("t.stride = ");
-    // tprint_stride(t->ndim, t->stride);
-    // printf("\n");
-    // printf("t.data = \n");
-    // tprint(t);
-
     return 0;
 }
