@@ -55,6 +55,18 @@ tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape) {
     return t;
 }
 
+tensor_t *range(float start, float end, float step) {
+    assert(start < end);
+    uint32_t numel = (end - start) / step;
+    tensor_t *t = tensor_alloc(1, (dim_sz_t[]){numel});
+    float acc = start;
+    for (uint32_t i = 0; i < t->numel; i++) {
+        t->data[i] = acc;
+        acc += step;
+    }
+    return t;
+}
+
 /**
  * Frees all of the memory allocated to the tensor and sets its internal pointers to NULL.
  * The memory for the tensor_t struct is freed but it is not responsible for setting any variables pointing to it to NULL.
@@ -449,7 +461,7 @@ tensor_t *sumall(tensor_t *t) {
  * @param keepdim  true to keep the summed dimension with a 1, false to squeeze the summed dimension
  * @return tensor with the summed elements along the specified dimension
  */
-tensor_t *sum(tensor_t *t, int16_t dim, bool keepdim) {
+tensor_t *sum(tensor_t *t, dim_t dim, bool keepdim) {
     assert(t != NULL);
     assert(t->shape != NULL);
     assert(t->data != NULL);
@@ -635,9 +647,8 @@ void tfprint(FILE *stream, tensor_t *t) {
     assert(t->data != NULL);
 
     // find out how many digits we need to print each element
-    tensor_t *maxt = max(t);
-    float maxel = *maxt->data;
-    tensor_free(maxt);
+    float maxel = t->data[0];
+    for (uint32_t i = 1; i < t->numel; i++) if (t->data[i] > maxel) maxel = t->data[i];
     uint8_t ndigits = int_digits(maxel);
     bool decimals = false;
     for (uint32_t i = 0; i < t->numel && !decimals; i++) decimals = has_decimals(t->data[i]);

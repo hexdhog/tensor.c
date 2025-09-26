@@ -36,6 +36,7 @@ typedef enum {
 } tensor_op_t;
 
 tensor_t *tensor_alloc(dim_t ndim, dim_sz_t *shape);
+tensor_t *range(float start, float end, float step);
 void tensor_free(tensor_t *t);
 bool is_contiguous(tensor_t *t);
 tensor_t *contiguous(tensor_t *t);

@@ -266,6 +266,9 @@ const char *(*fnx[])(void) = {
 };
 
 int main(int argc, char **argv) {
-    for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
+    // for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
+    tensor_t *t = range(1, 25, 1);
+    tprint(t);
+
     return 0;
 }
