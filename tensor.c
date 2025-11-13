@@ -9,6 +9,7 @@
 #define BUFF_SIZE 512
 static char buff[BUFF_SIZE];
 
+// static void elementfmt(float elem, char *buff, size_t len);
 static size_t tinfo2str(tensor_t *t, char *dst, const size_t dstlen);
 static size_t tuple2str(void *tuple, const size_t numel, const size_t szel, const char *const fmtel, char *dst, const size_t dstlen);
 
@@ -418,8 +419,6 @@ tensor_t *unsqueeze(tensor_t *t, dim_t dim) {
     return t;
 }
 
-// **** code below does not work/untested with strides
-
 // TODO: add argmin/argmax and amin/amax
 // TODO: min/max functions can be simplified with ops (they are the exact same except for one symbol; like ewop)
 
@@ -438,6 +437,10 @@ tensor_t *min(tensor_t *t) {
     float m = t->data[0];
     for (uint32_t i = 1; i < t->numel; i++) if (t->data[i] < m) m = t->data[i];
     *r->data = m;
+    DBG(1, {
+        assert(tinfo2str(t, buff, BUFF_SIZE) != 0);
+        printf("%s -> %f", buff, m);
+    });
     return r;
 }
 
@@ -456,6 +459,10 @@ tensor_t *max(tensor_t *t) {
     float m = t->data[0];
     for (uint32_t i = 1; i < t->numel; i++) if (t->data[i] > m) m = t->data[i];
     *r->data = m;
+    DBG(1, {
+        assert(tinfo2str(t, buff, BUFF_SIZE) != 0);
+        printf("%s -> %f", buff, m);
+    });
     return r;
 }
 
@@ -476,6 +483,16 @@ tensor_t *sumall(tensor_t *t) {
     return r;
 }
 
+
+
+
+
+// **** code below does not work/untested with strides
+
+
+
+
+
 /**
  * Returns the sum of all the elements along the specified dimension of a tensor
  * 
@@ -489,42 +506,63 @@ tensor_t *sum(tensor_t *t, dim_t dim, bool keepdim) {
     assert(t->shape != NULL);
     assert(t->data != NULL);
 
-    dim_t d = resolve_dim(t->ndim, dim);
+    dim = resolve_dim(t->ndim, dim);
     dim_sz_t *shape = malloc(t->ndim * sizeof(*shape));
     assert(shape != NULL);
     memcpy(shape, t->shape, t->ndim * sizeof(*shape));
-    shape[d] = 1;
+    shape[dim] = 1;
     tensor_t *r = tensor_alloc(t->ndim, shape);
     free(shape);
 
-    // TODO: write about new reduce implementation in sum.ipynb
-    uint32_t outer = 1, dimsz = t->shape[d], inner = 1;
-    for (dim_t i = 0; i < d; i++) outer *= t->shape[i];
-    for (dim_t i = d+1; i < t->ndim; i++) inner *= t->shape[i];
+    // dim_t *index = malloc(t->ndim * sizeof(*index));
+    // assert(index != NULL);
+    // memset(index, 0, t->ndim * sizeof(*index));
 
-    // printf("shape: ");
-    // print_shape(t->ndim, t->shape);
-    // printf("\n");
-    // printf("  dim: %d\n", d);
-    // printf("outer: %d\n", outer);
-    // printf("dimsz: %d\n", dimsz);
-    // printf("inner: %d\n", inner);
+    // for (uint32_t i = 0; i < t->numel; i++) {
+    //     assert(tuple2str(index, t->ndim, sizeof(*index), "%u", buff, BUFF_SIZE) > 0);
+    //     printf("%3u: %s\n", i, buff);
+    //     for (dim_t j = t->ndim-1; j >= 0; j--) {
+    //         if (++index[j] < t->shape[j]) break;
+    //         index[j] = 0;
+    //     }
+    // }
+
+    // TODO: write about new reduce implementation in sum.ipynb
+    uint32_t outer = 1, dimsz = t->shape[dim], inner = 1;
+    for (dim_t i = 0; i < dim; i++) outer *= t->shape[i];
+    for (dim_t i = dim+1; i < t->ndim; i++) inner *= t->shape[i];
+
+    uint32_t ostride = dim == 0 ? 1 : t->stride[dim-1];
+    uint32_t dstride = t->stride[dim];
+    uint32_t istride = dim == t->ndim-1 ? 1 : t->stride[dim+1];
+    // istride = 1;
+
+    tinfo(t);
+    printf("    dim: %d\n", dim);
+    printf("  outer: %d\n", outer);
+    printf("  dimsz: %d\n", dimsz);
+    printf("  inner: %d\n", inner);
+    printf("ostride: %d\n", ostride);
+    printf("dstride: %d\n", dstride);
+    printf("istride: %d\n", istride);
 
     for (uint32_t o = 0; o < outer; o++) {
         for (uint32_t i = 0; i < inner; i++) {
             float acc = 0;
-            // printf("r[%d] = ", o * inner + i);
-            for (uint32_t j = 0; j < dimsz; j++) {
-                acc += t->data[o * dimsz * inner + j * inner + i];
-                // printf("t[%d]", o * dimsz * inner + j * inner + i);
-                // if (j < dimsz-1) printf(" + ");
+            printf("r[%d] = ", o * inner + i);
+            for (uint32_t d = 0; d < dimsz; d++) {
+                // uint32_t idx = o * dimsz * inner + d * inner + i;
+                uint32_t idx = o * ostride + d * dstride + i * istride;
+                printf("%2d", idx);
+                // acc += t->data[idx];
+                if (d < dimsz-1) printf(" + ");
             }
-            // printf("\n");
+            printf("\n");
             r->data[o * inner + i] = acc;
         }
     }
 
-    return keepdim ? r : squeeze(r, d);
+    return keepdim ? r : squeeze(r, dim);
 }
 
 // element wise operation
@@ -647,6 +685,12 @@ static size_t tinfo2str(tensor_t *t, char *dst, const size_t dstlen) {
 
     return o;
 }
+
+// static void elementfmt(float elem, char *buff, size_t len) {
+//     uint8_t ndigits = int_digits(elem);
+//     if (has_decimals(elem)) assert(snprintf(buff, len, "%%%d.4f", ndigits + 5) > 0);
+//     else assert(snprintf(buff, len, "%%*g") > 0);
+// }
 
 void tfinfo(FILE *stream, tensor_t *t) {
     assert(t != NULL);

@@ -86,15 +86,18 @@ const char *test_reshape() {
 /********************* BROADCAST *********************/
 
 const char *test_broadcast() {
-    dim_sz_t *ashape = NULL, *bshape = NULL;
     assert(broadcast(2, (dim_sz_t[]){3, 4}, NULL, 2, (dim_sz_t[]){4, 1}, NULL) == 0);
     assert(broadcast(2, (dim_sz_t[]){3, 4}, NULL, 1, (dim_sz_t[]){2}, NULL) == 0);
     assert(broadcast(2, (dim_sz_t[]){3, 4}, NULL, 1, (dim_sz_t[]){1, 4}, NULL) == 2);
     assert(broadcast(3, (dim_sz_t[]){3, 1, 4}, NULL, 3, (dim_sz_t[]){1, 2, 4}, NULL) == 3);
     assert(broadcast(3, (dim_sz_t[]){3, 1, 4}, NULL, 1, (dim_sz_t[]){4}, NULL) == 3);
+
+    dim_sz_t *ashape = NULL, *bshape = NULL;
     assert(broadcast(3, (dim_sz_t[]){2, 3, 4}, &ashape, 2, (dim_sz_t[]){1, 4}, &bshape) == 3);
     assert(memcmp(ashape, (dim_sz_t[]){2, 3, 4}, sizeof(3 * sizeof(dim_sz_t))) == 0);
     assert(memcmp(bshape, (dim_sz_t[]){1, 1, 4}, sizeof(3 * sizeof(dim_sz_t))) == 0);
+    free(ashape);
+    free(bshape);
 
     return __func__;
 }
@@ -134,19 +137,52 @@ const char *test_squeeze_unqueeze() {
     assert(memcmp(t->shape, (dim_sz_t[]){2, 3, 4}, t->ndim * sizeof(dim_sz_t)) == 0);
     assert(memcmp(t->stride, (stride_t[]){12, 4, 1}, t->ndim * sizeof(stride_t)) == 0);
 
+    tensor_free(t);
+
+    return __func__;
+}
+
+/********************* MIN/MAX *********************/
+
+const char *test_min_max() {
+    const float dmin = 2, dmax = 98;
+    const float data[] = { 18, 68, 87, 44, 55, 90, 16, 80,  5, 76, 88, 28, 31, 32, 16, 82, 63, 93,
+                           76, 25, 44, 82, 73, 52, 63, 92, 31, 58, 58, 19, 57, 50, 53, 91, 26, 63,
+                           97, 33, 94, 40, 67, 75, 45, 62, 75, 42, 72, 83,  5,  2, 15, 72, 87, 61,
+                           33, 19, 74, 13, 24, 21, 61, 27, 77, 85, 48, 61,  9, 15, 13, 98, 61, 10,
+                           72, 86, 71, 43, 24, 11, 46, 80, 86, 53,  3, 85, 35,  6, 62, 21, 67, 40,
+                           45, 26, 15, 61,  7, 94, 21, 30, 61, 18 };
+    tensor_t *t = tensor_alloc(1, (dim_sz_t[]){100});
+    assert(sizeof(data) / sizeof(*data) == t->numel);
+    memcpy(t->data, data, t->numel * sizeof(*t->data));
+    tensor_t *tmin = min(t), *tmax = max(t);
+    assert(tmin->data[0] == dmin);
+    assert(tmax->data[0] == dmax);
+
+    tensor_free(t);
+    tensor_free(tmin);
+    tensor_free(tmax);
+
     return __func__;
 }
 
 /********************* SUM *********************/
 
 const char *test_sumall() {
-    tensor_t *t = tensor_alloc(2, (dim_sz_t[]){2, 3});
-    for (int i = 0; i < 6; i++) t->data[i] = i + 1; // [1,2,3,4,5,6]
+    const float data[] = { 18, 68, 87, 44, 55, 90, 16, 80,  5, 76, 88, 28, 31, 32, 16, 82, 63, 93,
+                           76, 25, 44, 82, 73, 52, 63, 92, 31, 58, 58, 19, 57, 50, 53, 91, 26, 63,
+                           97, 33, 94, 40, 67, 75, 45, 62, 75, 42, 72, 83,  5,  2, 15, 72, 87, 61,
+                           33, 19, 74, 13, 24, 21, 61, 27, 77, 85, 48, 61,  9, 15, 13, 98, 61, 10,
+                           72, 86, 71, 43, 24, 11, 46, 80, 86, 53,  3, 85, 35,  6, 62, 21, 67, 40,
+                           45, 26, 15, 61,  7, 94, 21, 30, 61, 18 };
+    tensor_t *t = tensor_alloc(1, (dim_sz_t[]){100});
+    assert(sizeof(data) / sizeof(*data) == t->numel);
+    memcpy(t->data, data, t->numel * sizeof(*t->data));
 
     tensor_t *r = sumall(t);
     assert(r != NULL);
     assert(r->ndim == 0 || (r->ndim == 1 && r->shape[0] == 1));
-    assert(*r->data == 21.0f);
+    assert(*r->data == 5030);
 
     tensor_free(t);
     tensor_free(r);
@@ -257,16 +293,30 @@ const char *test_sum_dim4() {
 }
 
 const char *(*fnx[])(void) = {
-    test_transpose,
-    test_is_contiguous,
-    test_reshape,
-    test_broadcast,
-    test_squeeze_unqueeze 
-    // test_sumall, test_sum_dim0, test_sum_dim1_keepdim, test_sum_negative_dim, test_sum_dim_out_of_range, test_sum_dim4,
+    // test_transpose,
+    // test_is_contiguous,
+    // test_reshape,
+    // test_broadcast,
+    // test_squeeze_unqueeze,
+    // test_min_max,
+    // test_sumall,
+    test_sum_dim0, test_sum_dim1_keepdim, test_sum_negative_dim, test_sum_dim_out_of_range, test_sum_dim4,
 };
 
 int main(int argc, char **argv) {
-    for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
+    // for (uint32_t i = 0; i < sizeof(fnx) / sizeof(*fnx); i++) printf("%s\n", fnx[i]());
+
+    tensor_t *t = transpose(reshape(range(0, 48, 1), 3, (dim_sz_t[]){2, 4, 6}), 0, 2);
+    // tensor_t *t = reshape(range(0, 48, 1), 3, (dim_sz_t[]){2, 4, 6});
+    tinfo(t);
+    tprint(t);
+
+    tensor_t *r = sum(t, 0, true);
+    tinfo(r);
+    tprint(r);
+
+    tensor_free(t);
+    tensor_free(r);
 
     return 0;
 }
